@@ -144,8 +144,8 @@ button.ghost:hover { background: var(--hover); }
 button.ghost:active { background: var(--active); }
 
 .status { margin-top: 12px; color: var(--muted); }
-.canvas-wrap { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; background: #fff; padding: 8px; display: flex; align-items: center; justify-content: center; min-height: 240px; }
-#resultCanvas { max-width: 100%; height: auto; }
+.canvas-wrap { margin-top: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--hover); padding: 8px; display: flex; align-items: center; justify-content: center; min-height: 240px; }
+#resultCanvas { max-width: 100%; height: auto; background: #fff; }
 
 .app-footer { text-align: center; color: var(--muted); padding: 18px; }
 .app-footer a { color: var(--primary); text-decoration: none; margin-left: 8px; }
