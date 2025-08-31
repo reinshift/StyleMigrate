@@ -232,6 +232,97 @@
     els.runBtn.addEventListener('click', runStyleTransfer);
     els.downloadBtn.addEventListener('click', downloadResult);
 
+    // 渲染示例图库（若示例容器存在）
+    (function renderSamples(){
+      var contentBox = document.getElementById('sampleContent');
+      var styleBox = document.getElementById('sampleStyle');
+      if (!contentBox && !styleBox) return;
+      var CONTENT_SAMPLES = [
+        './img_content/cat.jpg',
+        './img_content/dog.jpg',
+        './img_content/flower.jpg',
+        './img_content/panda.jpg'
+      ];
+      var STYLE_SAMPLES = [
+        './img_style/Monet.png',
+        './img_style/Linear.jpg',
+        './img_style/Vincent_starrynight.jpg',
+        './img_style/BG_landscape_painting.jpg'
+      ];
+      function createCard(url, which){
+        var card = document.createElement('div');
+        card.className = 'sample-card';
+        var img = document.createElement('img');
+        img.src = url;
+        img.alt = url.split('/').pop();
+        img.onerror = function(){ card.remove(); };
+        var actions = document.createElement('div');
+        actions.className = 'sample-actions';
+        var btn = document.createElement('button');
+        btn.setAttribute('data-which', which);
+        btn.setAttribute('data-url', url);
+        btn.textContent = which === 'content' ? '作为内容' : '作为风格';
+        actions.appendChild(btn);
+        card.appendChild(img);
+        card.appendChild(actions);
+        return card;
+      }
+      if (contentBox) {
+        CONTENT_SAMPLES.forEach(function(u){ contentBox.appendChild(createCard(u, 'content')); });
+      }
+      if (styleBox) {
+        STYLE_SAMPLES.forEach(function(u){ styleBox.appendChild(createCard(u, 'style')); });
+      }
+      // 委托点击事件
+      document.addEventListener('click', function(e){
+        var t = e.target;
+        if (t && t.matches('.sample-actions button')) {
+          var which = t.getAttribute('data-which');
+          var url = t.getAttribute('data-url');
+          try {
+            if (which === 'content') {
+              els.contentPreview.crossOrigin = 'anonymous';
+              els.contentPreview.src = url;
+              var boxC = els.contentPreview.closest('.preview');
+              if (boxC) boxC.classList.remove('empty');
+            } else {
+              els.stylePreview.crossOrigin = 'anonymous';
+              els.stylePreview.src = url;
+              var boxS = els.stylePreview.closest('.preview');
+              if (boxS) boxS.classList.remove('empty');
+            }
+            setStatus('已选择示例图片');
+            enableRunIfReady();
+          } catch(_) {}
+        }
+      });
+    })();
+
+    // 若从首页选择了示例，自动填充预览
+    try {
+      var presetContent = localStorage.getItem('stylemigrate_preset_content');
+      var presetStyle = localStorage.getItem('stylemigrate_preset_style');
+      if (presetContent) {
+        els.contentPreview.crossOrigin = 'anonymous';
+        els.contentPreview.src = presetContent;
+        var boxC = els.contentPreview.closest('.preview');
+        if (boxC) boxC.classList.remove('empty');
+      }
+      if (presetStyle) {
+        els.stylePreview.crossOrigin = 'anonymous';
+        els.stylePreview.src = presetStyle;
+        var boxS = els.stylePreview.closest('.preview');
+        if (boxS) boxS.classList.remove('empty');
+      }
+      if (presetContent || presetStyle) {
+        setStatus('已从示例填充图片');
+        enableRunIfReady();
+        // 用完即清理，避免下次误用
+        localStorage.removeItem('stylemigrate_preset_content');
+        localStorage.removeItem('stylemigrate_preset_style');
+      }
+    } catch (_) {}
+
     // 后台预热（可选）
     setTimeout(async () => {
       try {

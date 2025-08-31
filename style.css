@@ -184,3 +184,15 @@ button.ghost:active { background: var(--active); }
 .nav-links a.primary:hover { background: var(--primary-600); }
 .app-footer a:hover { text-decoration: underline; }
 
+
+/* 示例图库样式（应用页） */
+.samples { margin-top: 18px; }
+.sample-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+@media (max-width: 860px) { .sample-grid { grid-template-columns: repeat(2, 1fr); } }
+.sample-card { position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+.sample-card img { width: 100%; height: 120px; object-fit: cover; display: block; }
+.sample-actions { display: flex; padding: 8px; justify-content: center; }
+.sample-actions button { border: 1px solid var(--border); background: #fff; color: var(--text); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.sample-actions button:hover { background: var(--hover); }
+.samples .hint { color: var(--muted); margin-top: 10px; font-size: 13px; }
+

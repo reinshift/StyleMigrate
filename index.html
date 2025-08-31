@@ -32,6 +32,7 @@
         <div id="err" class="error"></div>
       </div>
     </section>
+    
   </main>
 
   <footer class="app-footer">
@@ -45,6 +46,20 @@
       var $pwd = document.getElementById('pwd');
       var $btn = document.getElementById('enterBtn');
       var $err = document.getElementById('err');
+      // 示例图库样式与交互
+      var style = document.createElement('style');
+      style.textContent = `
+        .samples { margin-top: 18px; }
+        .sample-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        @media (max-width: 860px) { .sample-grid { grid-template-columns: repeat(2, 1fr); } }
+        .sample-card { position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
+        .sample-card img { width: 100%; height: 120px; object-fit: cover; display: block; }
+        .sample-actions { display: flex; padding: 8px; justify-content: center; }
+        .sample-actions button { border: 1px solid var(--border); background: #fff; color: var(--text); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+        .sample-actions button:hover { background: var(--hover); }
+        .hint { color: var(--muted); margin-top: 10px; font-size: 13px; }
+      `;
+      document.head.appendChild(style);
 
       function go() {
         var v = ($pwd.value || '').trim();
@@ -59,6 +74,21 @@
 
       $btn.addEventListener('click', go);
       $pwd.addEventListener('keydown', function(e){ if (e.key === 'Enter') go(); });
+
+      // 处理示例点击，保存预设到 localStorage
+      document.addEventListener('click', function(e){
+        var t = e.target;
+        if (t && t.matches('.sample-actions button')) {
+          var which = t.getAttribute('data-which');
+          var url = t.getAttribute('data-url');
+          try {
+            if (which === 'content') localStorage.setItem('stylemigrate_preset_content', url);
+            if (which === 'style') localStorage.setItem('stylemigrate_preset_style', url);
+          } catch(_) {}
+          t.textContent = (which === 'content') ? '已选择内容' : '已选择风格';
+          setTimeout(function(){ t.textContent = (which === 'content') ? '作为内容' : '作为风格'; }, 1200);
+        }
+      });
     })();
   </script>
 </body>
