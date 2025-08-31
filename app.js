@@ -17,6 +17,8 @@
 
   const MAX_SIDE = 1024; // 限制最长边，平衡速度/内存
   let model = null; // mi.ArbitraryStyleTransferNetwork 实例
+  let modelReady = false; // 模型是否已就绪
+  let modelLoading = false; // 模型是否正在加载
   let resultReady = false;
 
   function setStatus(text) {
@@ -78,10 +80,13 @@
       catch (_) {}
     }
     setStatus('正在加载模型…（首次需要数秒）');
+    modelLoading = true;
     model = new mi.ArbitraryStyleTransferNetwork();
     if (typeof model.initialize === 'function') {
       await model.initialize();
     }
+    modelReady = true;
+    modelLoading = false;
     setStatus('模型就绪');
     return model;
   }
@@ -91,6 +96,18 @@
       els.runBtn.disabled = true;
       els.downloadBtn.disabled = true;
       setStatus('准备中…');
+
+      // 若模型未就绪，提示并阻止执行
+      if (!modelReady) {
+        if (modelLoading) {
+          setStatus('模型正在加载，请稍候…');
+        } else {
+          setStatus('正在加载模型，请稍候…');
+          // 触发一次加载（非阻塞，可选）
+          ensureModel().catch(() => {});
+        }
+        return; // 不继续执行
+      }
 
       const mdl = await ensureModel();
 
