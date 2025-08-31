@@ -95,7 +95,7 @@
     try {
       els.runBtn.disabled = true;
       els.downloadBtn.disabled = true;
-      setStatus('准备中…');
+      setStatus('处理中…');
 
       // 若模型未就绪，提示并阻止执行
       if (!modelReady) {
@@ -198,8 +198,12 @@
         const url = URL.createObjectURL(file);
         if (which === 'content') {
           els.contentPreview.src = url;
+          const box = els.contentPreview.closest('.preview');
+          if (box) box.classList.remove('empty');
         } else {
           els.stylePreview.src = url;
+          const box = els.stylePreview.closest('.preview');
+          if (box) box.classList.remove('empty');
         }
         resultReady = false;
         els.downloadBtn.disabled = true;

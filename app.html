@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StyleMigrate - 风格迁移</title>
+  <meta name="description" content="在浏览器中进行任意风格迁移：上传内容图像与风格图像，点击一键生成并下载结果。" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="./style.css" />
+  <script>
+    // 简单前端门禁：未授权则跳回入口页
+    (function() {
+      try {
+        var authed = localStorage.getItem('stylemigrate_authed') === 'true';
+        if (!authed) { window.location.replace('./index.html'); }
+      } catch (e) { window.location.replace('./index.html'); }
+    })();
+  </script>
+  <!-- 仅在通过校验后才会加载以下资源 -->
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js" defer></script>
+  <!-- Magenta image (UMD) - Arbitrary Style Transfer -->
+  <script src="https://cdn.jsdelivr.net/npm/@magenta/image@0.2.1" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <h1>StyleMigrate</h1>
+    <p class="subtitle">内容图像 + 风格图像 = 风格迁移</p>
+  </header>
+
+  <main class="container">
+    <section class="panel upload-panel">
+      <h2>1. 选择图像</h2>
+      <div class="grid">
+        <div class="card">
+          <label class="file-label" for="contentInput">内容图像（Content）</label>
+          <input type="file" id="contentInput" accept="image/*" />
+          <div class="preview empty">
+            <img id="contentPreview" alt="内容图预览" />
+          </div>
+        </div>
+        <div class="card">
+          <label class="file-label" for="styleInput">风格图像（Style）</label>
+          <input type="file" id="styleInput" accept="image/*" />
+          <div class="preview empty">
+            <img id="stylePreview" alt="风格图预览" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel action-panel">
+      <h2>2. 风格迁移</h2>
+      <div class="actions">
+        <button id="runBtn" class="primary" disabled>开始风格迁移</button>
+        <button id="downloadBtn" class="ghost" disabled>下载结果</button>
+      </div>
+      <div class="status" id="status">请先选择内容图与风格图。</div>
+      <div class="canvas-wrap">
+        <canvas id="resultCanvas"></canvas>
+      </div>
+    </section>
+
+    <section class="panel tips-panel">
+      <h3>提示</h3>
+      <ul>
+        <li>为获得更快速度，请使用带独显/支持 WebGL 的浏览器（Chrome/Edge）。</li>
+        <li>图像过大可能内存不足，建议宽或高不超过 1024px。</li>
+        <li>请等待模型加载好后再进行风格迁移。</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>© 2025 StyleMigrate</span>
+    <a href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a>
+  </footer>
+
+  <script src="./app.js" defer></script>
+</body>
+</html>
