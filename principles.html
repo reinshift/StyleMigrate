@@ -16,12 +16,11 @@
 <body>
   <nav class="topnav">
     <div class="topnav-inner">
-      <a class="brand" href="./index.html">
+      <a class="brand" href="./app.html">
         <img src="./xdu.svg" alt="Logo"/>
         <span>StyleMigrate</span>
       </a>
       <div class="nav-links">
-        <a href="./index.html">入口</a>
         <a href="./app.html">应用</a>
         <a href="./principles.html" class="primary">原理介绍</a>
       </div>
@@ -112,30 +111,12 @@
     </section>
 
     <section class="panel">
-      <h2>8. 任意风格迁移（Arbitrary Style Transfer）</h2>
-      <p>
-        任意风格方法不需为每种风格单独训练：
-      </p>
-      <ul>
-        <li><b>AdaIN</b>：将内容特征 $F_c$ 的通道均值/方差对齐到风格特征 $F_s$ 的统计量：
-          $$\mathrm{AdaIN}(F_c,F_s) = \sigma(F_s) \cdot \frac{F_c - \mu(F_c)}{\sigma(F_c)} + \mu(F_s)\, .$$
-        </li>
-        <li><b>WCT</b>：白化-染色变换（PCA 特征变换）对齐二阶统计。</li>
-        <li><b>Magenta/TF.js 任意风格</b>：学习一个将风格图编码为“风格瓶颈”的网络，并对内容特征施加调制（如特征归一化/仿射变换），从而快速合成。</li>
-      </ul>
-      <p>
-        浏览器端实现通常采用轻量模型并在 WebGL/WebGPU 上推理，以获得较好的速度与兼容性。
-      </p>
-    </section>
-
-    <section class="panel">
-      <h2>9. 推理流程小结</h2>
+      <h2>8. 推理流程小结</h2>
       <ol>
         <li>读取输入图像，归一化/缩放至合适分辨率；</li>
         <li>提取内容与风格特征，并计算风格描述（如均值/方差或 Gram 矩阵）；</li>
         <li>对内容特征施加风格变换（如 AdaIN/风格调制）；</li>
-        <li>解码为图像；可附加 TV 等后处理提升平滑性；</li>
-        <li>输出到画布并允许下载。</li>
+        <li>解码为图像。</li>
       </ol>
     </section>
   </main>

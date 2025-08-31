@@ -16,6 +16,7 @@
   --hover: #f9fafb;
   --active: #f3f4f6;
   --ring: 0 0 0 3px rgba(37,99,235,0.15);
+  --panel-alt: #eef1f5; /* 略深于页面背景的灰，增强分区对比 */
 }
 
 * { box-sizing: border-box; }
@@ -106,7 +107,7 @@ input[type="file"]::-webkit-file-upload-button {
 }
 input[type="file"]::-webkit-file-upload-button:hover { background: var(--primary-600); }
 
-.preview { margin-top: 12px; display: flex; align-items: center; justify-content: center; min-height: 220px; background: #fff; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; position: relative; }
+.preview { margin-top: 12px; display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--active); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; position: relative; }
 .preview img { max-width: 100%; max-height: 420px; display: block; }
 /* 空状态：隐藏 img，显示占位文案 */
 .preview.empty img { display: none; }
