@@ -21,6 +21,26 @@
   let modelLoading = false; // 模型是否正在加载
   let resultReady = false;
 
+  function getDeviceMemoryGB() {
+    try { return Math.max(0, Number(navigator.deviceMemory || 0)); } catch (_) { return 0; }
+  }
+
+  function pickSizesByBackend(backend) {
+    // 根据后端与设备内存动态选择尺寸，越弱的后端越小
+    const mem = getDeviceMemoryGB();
+    if (backend === 'webgl' || backend === 'webgpu') {
+      // 独显/集显一般可用较大尺寸；低内存设备下调
+      if (mem && mem <= 2) return { content: 768, style: 384 };
+      return { content: 1024, style: 512 };
+    }
+    if (backend === 'wasm') {
+      if (mem && mem <= 2) return { content: 512, style: 320 };
+      return { content: 640, style: 384 };
+    }
+    // cpu 兜底
+    return { content: 448, style: 288 };
+  }
+
   function setStatus(text) {
     els.status.textContent = text;
   }
@@ -73,13 +93,31 @@
     if (!(window.mi && window.mi.ArbitraryStyleTransferNetwork)) {
       throw new Error('@magenta/image 未正确加载');
     }
-    // WebGL 检查
-    const backend = tf.getBackend();
+    // 后端优先级：webgl/webgpu -> wasm -> cpu
+    let backend = tf.getBackend();
+    try {
+      if (backend !== 'webgl' && backend !== 'webgpu') {
+        await tf.setBackend('webgl');
+        await tf.ready();
+        backend = tf.getBackend();
+      }
+    } catch (_) {}
     if (backend !== 'webgl' && backend !== 'webgpu') {
-      try { await tf.setBackend('webgl'); await tf.ready(); }
+      // 尝试 wasm 兜底
+      try {
+        if (tf.wasm && typeof tf.wasm.setWasmPaths === 'function') {
+          tf.wasm.setWasmPaths('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@3.21.0/dist/');
+        }
+        await tf.setBackend('wasm');
+        await tf.ready();
+        backend = tf.getBackend();
+      } catch (_) {}
+    }
+    if (backend !== 'webgl' && backend !== 'webgpu' && backend !== 'wasm') {
+      try { await tf.setBackend('cpu'); await tf.ready(); backend = tf.getBackend(); }
       catch (_) {}
     }
-    setStatus('正在加载模型…（首次需要数秒）');
+    setStatus('正在加载模型…（后端：' + backend + '）');
     modelLoading = true;
     model = new mi.ArbitraryStyleTransferNetwork();
     if (typeof model.initialize === 'function') {
@@ -87,7 +125,7 @@
     }
     modelReady = true;
     modelLoading = false;
-    setStatus('模型就绪');
+    setStatus('模型就绪（后端：' + backend + '）');
     return model;
   }
 
@@ -123,9 +161,11 @@
         i.src = els.stylePreview.src;
       });
 
-      // 缩放至合适大小
-      const contentCanvas = downscaleToCanvas(contentImg, MAX_SIDE);
-      const styleCanvas = downscaleToCanvas(styleImg, 512); // 风格图可适当更小
+      // 根据后端/设备动态缩放至合适大小
+      const backend = tf.getBackend();
+      const sizes = pickSizesByBackend(backend);
+      const contentCanvas = downscaleToCanvas(contentImg, sizes.content);
+      const styleCanvas = downscaleToCanvas(styleImg, sizes.style); // 风格图可更小
 
       setStatus('推理中…（取决于设备性能，可能需数秒到十数秒）');
 
@@ -179,7 +219,7 @@
 
       resultReady = true;
       els.downloadBtn.disabled = false;
-      setStatus('完成！可点击“下载结果”。');
+      setStatus('完成！可点击“下载结果”。（后端：' + tf.getBackend() + '）');
     } catch (err) {
       console.error(err);
       setStatus('发生错误：' + (err && err.message ? err.message : err));
