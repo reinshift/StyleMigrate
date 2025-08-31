@@ -3,9 +3,15 @@
   --card: #ffffff;
   --text: #1f2937;
   --muted: #6b7280;
+  --muted-hover: #8b949e;
+  --muted-active: #6b7280;
   --primary: #2563eb;
   --primary-600: #1d4ed8;
+  --primary-hover: #1d4ed8;
+  --primary-active: #1a56db;
   --border: #e5e7eb;
+  --border-hover: #d1d5db;
+  --border-active: #c7d2fe;
   --shadow: 0 8px 24px rgba(0,0,0,0.06);
   --hover: #f9fafb;
   --active: #f3f4f6;
@@ -143,5 +149,37 @@ button.ghost:active { background: var(--active); }
 
 .app-footer { text-align: center; color: var(--muted); padding: 18px; }
 .app-footer a { color: var(--primary); text-decoration: none; margin-left: 8px; }
+
+/* 顶部导航栏 */
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+.topnav-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; }
+.brand img { width: 28px; height: 28px; }
+.brand span { font-weight: 700; }
+.nav-links { display: flex; align-items: center; gap: 10px; }
+.nav-links a, .nav-links button {
+  text-decoration: none;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+.nav-links a.primary, .nav-links button.primary { background: var(--primary); color: #fff; border-color: transparent; }
+.nav-links a:hover { background: #f3f4f6; }
+.nav-links a.primary:hover { background: var(--primary-600); }
 .app-footer a:hover { text-decoration: underline; }
 

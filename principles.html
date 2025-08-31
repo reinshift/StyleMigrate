@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StyleMigrate - 原理介绍</title>
+  <meta name="description" content="风格迁移的数学原理与算法：从基础到进阶，包括内容/风格损失、Gram 矩阵、TV 正则与快速/任意风格迁移。" />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="stylesheet" href="./style.css" />
+  <!-- MathJax for LaTeX rendering -->
+  <script>
+    window.MathJax = { tex: { inlineMath: [["$","$"],["\\(","\\)"]], displayMath: [["$$","$$"],["\\[","\\]"]] } };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" defer></script>
+</head>
+<body>
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="./index.html">
+        <img src="./xdu.svg" alt="Logo"/>
+        <span>StyleMigrate</span>
+      </a>
+      <div class="nav-links">
+        <a href="./index.html">入口</a>
+        <a href="./app.html">应用</a>
+        <a href="./principles.html" class="primary">原理介绍</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="app-header">
+    <h1>风格迁移原理</h1>
+    <p class="subtitle">从欧氏空间与神经网络到内容/风格损失与任意风格迁移</p>
+  </header>
+
+  <main class="container">
+    <section class="panel">
+      <h2>1. 基础：欧氏空间与范数</h2>
+      <p>
+        图像可视为欧氏空间 $\mathbb{R}^{H\times W \times C}$ 中的张量。我们常用的度量是 $\ell_2$ 范数：
+      </p>
+      <p>$$\|x\|_2 = \sqrt{\sum_i x_i^2}\; , \quad \|x-y\|_2^2 = \sum_i (x_i-y_i)^2\, .$$</p>
+      <p>
+        在神经网络特征空间中，$\ell_2$ 距离刻画了两幅图在某层表征上的“相似度”。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>2. 卷积神经网络与特征表征</h2>
+      <p>
+        给定预训练 CNN（如 VGG），记第 $l$ 层的特征提取函数为 $\varphi_l(\cdot)$，对图像 $x$ 的输出为
+        $\varphi_l(x) \in \mathbb{R}^{N_l \times M_l}$，其中 $N_l$ 是通道数，$M_l=H_l W_l$ 为展平后的空间尺寸。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>3. 内容损失（Content Loss）</h2>
+      <p>
+        令 $p$ 为内容图像、$x$ 为待优化图像（输出）。在第 $l$ 层，内容损失定义为
+      </p>
+      <p>$$\mathcal{L}^{(l)}_{\text{content}}(x, p) = \frac{1}{2}\,\big\|\varphi_l(x) - \varphi_l(p)\big\|_2^2\, .$$</p>
+      <p>
+        跨多层时可加权求和：$\mathcal{L}_{\text{content}} = \sum_l w^{(l)}_c\, \mathcal{L}^{(l)}_{\text{content}}$。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>4. 风格损失（Style Loss）与 Gram 矩阵</h2>
+      <p>
+        风格由特征的二阶统计量表征。对特征 $F = \varphi_l(x) \in \mathbb{R}^{N_l \times M_l}$，定义归一化 Gram 矩阵：
+      </p>
+      <p>$$G_l(F) = \frac{1}{N_l M_l}\, F\,F^\top \in \mathbb{R}^{N_l\times N_l}\, .$$</p>
+      <p>
+        令风格图像为 $s$，其在第 $l$ 层的 Gram 矩阵为 $A_l = G_l\big(\varphi_l(s)\big)$，输出图像的 Gram 矩阵为
+        $G_l = G_l\big(\varphi_l(x)\big)$，则风格损失为：
+      </p>
+      <p>$$\mathcal{L}^{(l)}_{\text{style}}(x, s) = \big\| G_l - A_l \big\|_F^2 = \sum_{i,j} (G_l^{ij} - A_l^{ij})^2\, .$$</p>
+      <p>
+        多层加权：$\mathcal{L}_{\text{style}} = \sum_l w^{(l)}_s\, \mathcal{L}^{(l)}_{\text{style}}$。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>5. 总变分正则（Total Variation, TV）</h2>
+      <p>
+        为鼓励输出图像的空间平滑性，引入 TV 正则：
+      </p>
+      <p>$$\mathcal{L}_{\text{tv}}(x) = \sum_{i,j} \Big( (x_{i,j} - x_{i+1,j})^2 + (x_{i,j} - x_{i,j+1})^2 \Big)\, .$$</p>
+    </section>
+
+    <section class="panel">
+      <h2>6. 经典优化式风格迁移</h2>
+      <p>
+        综合得到总损失：
+      </p>
+      <p>$$\mathcal{L}(x) = \alpha\, \mathcal{L}_{\text{content}}(x,p) + \beta\, \mathcal{L}_{\text{style}}(x,s) + \gamma\, \mathcal{L}_{\text{tv}}(x)\, .$$</p>
+      <p>
+        固定 $p,s$ 与 CNN 参数，以上式对 $x$ 做梯度下降即可获得风格化结果。此法质量高但推理慢（每张图都要优化）。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>7. 快速风格迁移（Feed-forward）</h2>
+      <p>
+        训练一个前馈网络 $T_\theta(\cdot)$ 以最小化上式感知损失，使得 $x = T_\theta(p)$ 一步得到结果。常见技巧：
+      </p>
+      <ul>
+        <li>实例归一化（Instance Normalization）改善风格表现；</li>
+        <li>感知损失使用预训练网络（如 VGG）的多层特征；</li>
+        <li>单风格模型或多风格条件模型（通过风格编码控制）。</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>8. 任意风格迁移（Arbitrary Style Transfer）</h2>
+      <p>
+        任意风格方法不需为每种风格单独训练：
+      </p>
+      <ul>
+        <li><b>AdaIN</b>：将内容特征 $F_c$ 的通道均值/方差对齐到风格特征 $F_s$ 的统计量：
+          $$\mathrm{AdaIN}(F_c,F_s) = \sigma(F_s) \cdot \frac{F_c - \mu(F_c)}{\sigma(F_c)} + \mu(F_s)\, .$$
+        </li>
+        <li><b>WCT</b>：白化-染色变换（PCA 特征变换）对齐二阶统计。</li>
+        <li><b>Magenta/TF.js 任意风格</b>：学习一个将风格图编码为“风格瓶颈”的网络，并对内容特征施加调制（如特征归一化/仿射变换），从而快速合成。</li>
+      </ul>
+      <p>
+        浏览器端实现通常采用轻量模型并在 WebGL/WebGPU 上推理，以获得较好的速度与兼容性。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>9. 推理流程小结</h2>
+      <ol>
+        <li>读取输入图像，归一化/缩放至合适分辨率；</li>
+        <li>提取内容与风格特征，并计算风格描述（如均值/方差或 Gram 矩阵）；</li>
+        <li>对内容特征施加风格变换（如 AdaIN/风格调制）；</li>
+        <li>解码为图像；可附加 TV 等后处理提升平滑性；</li>
+        <li>输出到画布并允许下载。</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>© 2025 StyleMigrate</span>
+    <a href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a>
+  </footer>
+</body>
+</html>
