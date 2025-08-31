@@ -112,36 +112,52 @@
 
       setStatus('推理中…（取决于设备性能，可能需数秒到十数秒）');
 
-      let stylizedTensor = null;
-      await tf.engine().startScope();
-      stylizedTensor = await mdl.stylize(contentCanvas, styleCanvas);
-      // stylizedTensor: tf.Tensor3D [h,w,3], 0-255 或 0-1 取决于实现。通常是 0..1。
-
-      // 将结果绘制到主画布
-      const [h, w] = stylizedTensor.shape.slice(0, 2);
-      els.resultCanvas.width = w;
-      els.resultCanvas.height = h;
-
-      // 标准化到 0..255 并绘制
-      const data = await stylizedTensor.data();
+      tf.engine().startScope();
+      const stylized = await mdl.stylize(contentCanvas, styleCanvas);
       const ctx = els.resultCanvas.getContext('2d');
-      const imageData = ctx.createImageData(w, h);
-      // 若值在 0..1，将其乘以 255
-      const scale = (function(){
-        let maxv = 0, minv = 1e9;
-        for (let i = 0; i < Math.min(1000, data.length); i++) {
-          const v = data[i]; maxv = Math.max(maxv, v); minv = Math.min(minv, v);
+
+      // 兼容不同返回类型
+      if (typeof tf !== 'undefined' && tf.tensor && stylized && typeof stylized === 'object' && typeof stylized.data === 'function' && Array.isArray(stylized.shape)) {
+        // Tensor（3D 或 4D）
+        let t = stylized;
+        if (t.shape.length === 4 && t.shape[0] === 1) {
+          t = t.squeeze(); // [1,h,w,3] -> [h,w,3]
         }
-        // 简单启发：若最大值 <= 1.5 视为 0..1
-        return (maxv <= 1.5) ? 255 : 1;
-      })();
-      for (let i = 0, j = 0; i < data.length; i += 3, j += 4) {
-        imageData.data[j] = data[i] * scale;
-        imageData.data[j + 1] = data[i + 1] * scale;
-        imageData.data[j + 2] = data[i + 2] * scale;
-        imageData.data[j + 3] = 255;
+        if (t.shape.length !== 3) {
+          throw new Error('模型返回张量维度不支持：' + t.shape.join('x'));
+        }
+        const [h, w] = t.shape.slice(0, 2);
+        els.resultCanvas.width = w;
+        els.resultCanvas.height = h;
+        const data = await t.data();
+        const imageData = ctx.createImageData(w, h);
+        const scale = (function(){
+          let maxv = 0, minv = 1e9;
+          for (let i = 0; i < Math.min(1000, data.length); i++) {
+            const v = data[i]; maxv = Math.max(maxv, v); minv = Math.min(minv, v);
+          }
+          return (maxv <= 1.5) ? 255 : 1; // 0..1 -> *255
+        })();
+        for (let i = 0, j = 0; i < data.length; i += 3, j += 4) {
+          imageData.data[j] = data[i] * scale;
+          imageData.data[j + 1] = data[i + 1] * scale;
+          imageData.data[j + 2] = data[i + 2] * scale;
+          imageData.data[j + 3] = 255;
+        }
+        ctx.putImageData(imageData, 0, 0);
+      } else if (stylized instanceof HTMLCanvasElement) {
+        // 直接是 Canvas
+        els.resultCanvas.width = stylized.width;
+        els.resultCanvas.height = stylized.height;
+        ctx.drawImage(stylized, 0, 0);
+      } else if (stylized && typeof stylized.width === 'number' && typeof stylized.height === 'number' && stylized.data) {
+        // ImageData
+        els.resultCanvas.width = stylized.width;
+        els.resultCanvas.height = stylized.height;
+        ctx.putImageData(stylized, 0, 0);
+      } else {
+        throw new Error('模型返回未知类型，无法绘制');
       }
-      ctx.putImageData(imageData, 0, 0);
       tf.engine().endScope();
 
       resultReady = true;
