@@ -21,6 +21,23 @@
   let modelLoading = false; // 模型是否正在加载
   let resultReady = false;
 
+  // 简单重试工具（指数退避）
+  async function withRetry(taskFn, { retries = 2, baseDelay = 400, onAttempt } = {}) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        if (onAttempt) onAttempt(attempt);
+        return await taskFn();
+      } catch (e) {
+        lastErr = e;
+        if (attempt === retries) break;
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw lastErr;
+  }
+
   function getDeviceMemoryGB() {
     try { return Math.max(0, Number(navigator.deviceMemory || 0)); } catch (_) { return 0; }
   }
@@ -121,7 +138,11 @@
     modelLoading = true;
     model = new mi.ArbitraryStyleTransferNetwork();
     if (typeof model.initialize === 'function') {
-      await model.initialize();
+      await withRetry(() => model.initialize(), {
+        retries: 2,
+        baseDelay: 500,
+        onAttempt: (k) => setStatus('正在加载模型…（后端：' + backend + '，重试 ' + (k+1) + '）')
+      });
     }
     modelReady = true;
     modelLoading = false;
@@ -170,7 +191,11 @@
       setStatus('推理中…（取决于设备性能，可能需数秒到十数秒）');
 
       tf.engine().startScope();
-      const stylized = await mdl.stylize(contentCanvas, styleCanvas);
+      const stylized = await withRetry(() => mdl.stylize(contentCanvas, styleCanvas), {
+        retries: 1,
+        baseDelay: 600,
+        onAttempt: (k) => setStatus(k ? '重试推理中…' : '推理中…（取决于设备性能，可能需数秒到十数秒）')
+      });
       const ctx = els.resultCanvas.getContext('2d');
 
       // 兼容不同返回类型
