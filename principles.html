@@ -45,6 +45,47 @@
     </section>
 
     <section class="panel">
+      <h2>直观理解与数学化（Intuition → Math）</h2>
+      <p>
+        直观上，我们希望输出图像 <em>x</em> 的“内容”与输入内容图 <em>p</em> 基本一致（保持一定的不变性），而“风格”应当贴近风格图 <em>s</em>。
+        用数学语言描述：令预训练网络第 $l$ 层特征为 $F_l(x)=\varphi_l(x)\in\mathbb{R}^{N_l\times M_l}$，其中 $N_l$ 为通道数、$M_l=H_lW_l$ 为空间位置数（展平）。
+      </p>
+      <ul>
+        <li><b>内容不变性</b>：保持空间结构与高层语义，即要求 $F_l(x)$ 与 $F_l(p)$ 在欧氏意义上接近：
+          $$\|F_l(x)-F_l(p)\|_F^2\quad\text{小。}$$
+          这保证了在特征空间中，输出与内容图在同一“语义邻域”内。
+        </li>
+        <li><b>风格对齐</b>：让输出的纹理、笔触等统计特性与风格图一致。可通过匹配通道间相关性（Gram 矩阵）或通道均值/方差实现：
+          $$G_l(F)=\tfrac{1}{N_lM_l}FF^\top,\quad \text{或}\quad (\mu(F),\sigma(F)).$$
+          令 $A_l=G_l\big(F_l(s)\big)$，则期望 $G_l\big(F_l(x)\big)\approx A_l$；或期望 $\mu\big(F_l(x)\big)\approx\mu\big(F_l(s)\big)$、$\sigma\big(F_l(x)\big)\approx\sigma\big(F_l(s)\big)$。
+        </li>
+      </ul>
+      <p>
+        这可以理解为：在高维特征空间中，我们寻找一种变换，使得 $F_l(p)$ 在<b>保持空间关系</b>（不破坏内容）下，朝向<b>风格子空间</b>靠拢（匹配统计）。
+        一种具体的、位置无关（仅在通道维操作）的变换是 AdaIN：
+      </p>
+      <p>
+        $$F'_l\;=\;\sigma\big(F_l(s)\big)\cdot \frac{F_l(p)-\mu\big(F_l(p)\big)}{\sigma\big(F_l(p)\big)}\; +\; \mu\big(F_l(s)\big),$$
+      </p>
+      <p>
+        它在每个空间位置上只做通道维的仿射变换，因而大体保留了内容布局，同时对齐风格统计。
+      </p>
+      <p>
+        统一的优化视角是最小化加权目标：
+      </p>
+      <p>
+        $$\min_x\; \alpha\sum_{l\in\mathcal{L}_c}\!\big\|F_l(x)-F_l(p)\big\|_F^2\; +\; \beta\sum_{l\in\mathcal{L}_s}\!\big\|G_l\big(F_l(x)\big)-G_l\big(F_l(s)\big)\big\|_F^2\; +\; \gamma\,\mathcal{L}_{\mathrm{tv}}(x).$$
+      </p>
+      <p>
+        两种实现路径：
+      </p>
+      <ul>
+        <li><b>优化式</b>：固定 $p,s$ 与特征提取网络，直接对像素 $x$ 梯度下降；</li>
+        <li><b>前馈式</b>：训练变换网络 $T_\theta$，使 $x=T_\theta(p)$ 近似上述目标的最优解，从而一步生成。</li>
+      </ul>
+    </section>
+
+    <section class="panel">
       <h2>2. 卷积神经网络与特征表征</h2>
       <p>
         给定预训练 CNN（如 VGG），记第 $l$ 层的特征提取函数为 $\varphi_l(\cdot)$，对图像 $x$ 的输出为
