@@ -305,7 +305,7 @@
       var CONTENT_SAMPLES = [
         './img_content/cat.jpg',
         './img_content/dog.jpg',
-        './img_content/schoolgate.jpg',
+        './img_content/flower.jpg',
         './img_content/xian_bell_tower.jpg'
       ];
       var STYLE_SAMPLES = [
