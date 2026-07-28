@@ -1,96 +1,186 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>StyleMigrate - 入口</title>
-  <meta name="description" content="StyleMigrate 入口页，输入密码后进入应用。" />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="stylesheet" href="./style.css" />
-  <style>
-    .gate { display: grid; place-items: center; min-height: 60vh; }
-    .gate-card { max-width: 520px; margin: 0 auto; text-align: center; }
-    .logo { width: 96px; height: 96px; margin: 6px auto 12px; display: block; }
-    .inputs { display: grid; gap: 10px; margin-top: 8px; }
-    .input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 16px; }
-    .error { color: #dc2626; min-height: 20px; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StyleMigrate - 西电高代与矩阵实验室</title>
+    <style>
+        .d-none { display: none !important; }
+        .btn-loading .spinner {
+            width: 20px; height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+    <link rel="stylesheet" href="login-style.css">
 </head>
 <body>
-  <header class="app-header">
-    <h1>StyleMigrate</h1>
-    <p class="subtitle">请输入访问密码进入</p>
-  </header>
+    <div class="login-container">
+        <div class="login-card">
+            <!-- Logo区域 -->
+            <div class="logo-section">
+                <div class="logo-container" id="logo-container">
+                    <img id="app-logo" src="xdu.svg" alt="应用Logo" class="app-logo">
+                </div>
+                <h1 class="app-title">🎓 西电高代与矩阵实验室</h1>
+                <p class="app-subtitle">StyleMigrate · 基于神经网络的任意风格迁移</p>
+            </div>
 
-  <main class="container gate">
-    <section class="panel gate-card">
-      <img class="logo" src="./xdu.svg" alt="Logo" />
-      <h2>进入应用</h2>
-      <div class="inputs">
-        <input id="pwd" class="input" type="password" placeholder="输入密码" autocomplete="current-password" />
-        <button id="enterBtn" class="primary">进入</button>
-        <div id="err" class="error"></div>
-      </div>
-    </section>
-    
-  </main>
+            <!-- 登录表单 -->
+            <div class="login-form-section">
+                <form id="login-form" class="login-form">
+                    <div class="form-group">
+                        <label for="password" class="form-label">访问密码</label>
+                        <div class="password-input-group">
+                            <input type="password" id="password" class="password-input"
+                                   placeholder="请输入访问密码" required autocomplete="current-password">
+                            <button type="button" class="password-toggle" id="password-toggle" title="显示/隐藏密码">👁️</button>
+                        </div>
+                    </div>
 
-  <footer class="app-footer">
-    <span>© 2025 StyleMigrate</span>
-    <a href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a>
-  </footer>
+                    <button type="submit" class="login-btn" id="login-btn">
+                        <span class="btn-text">进入系统</span>
+                        <div class="btn-loading d-none"><div class="spinner"></div></div>
+                    </button>
+                </form>
 
-  <script>
-    (function(){
-      var PASS = 'xdugaodai';
-      var $pwd = document.getElementById('pwd');
-      var $btn = document.getElementById('enterBtn');
-      var $err = document.getElementById('err');
-      // 示例图库样式与交互
-      var style = document.createElement('style');
-      style.textContent = `
-        .samples { margin-top: 18px; }
-        .sample-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-        @media (max-width: 860px) { .sample-grid { grid-template-columns: repeat(2, 1fr); } }
-        .sample-card { position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #fff; }
-        .sample-card img { width: 100%; height: 120px; object-fit: cover; display: block; }
-        .sample-actions { display: flex; padding: 8px; justify-content: center; }
-        .sample-actions button { border: 1px solid var(--border); background: #fff; color: var(--text); padding: 6px 10px; border-radius: 8px; cursor: pointer; }
-        .sample-actions button:hover { background: var(--hover); }
-        .hint { color: var(--muted); margin-top: 10px; font-size: 13px; }
-      `;
-      document.head.appendChild(style);
+                <div class="error-message d-none" id="error-message">
+                    <svg class="error-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                    <span id="error-text">密码错误，请重试</span>
+                </div>
+            </div>
 
-      function go() {
-        var v = ($pwd.value || '').trim();
-        if (v === PASS) {
-          try { localStorage.setItem('stylemigrate_authed', 'true'); } catch(e) {}
-          window.location.href = './app.html';
-        } else {
-          $err.textContent = '密码错误，请重试';
-          $pwd.focus();
+            <!-- 功能预览 -->
+            <div class="features-section">
+                <h3 class="features-title">系统功能</h3>
+                <div class="features-grid">
+                    <div class="feature-item">
+                        <div class="feature-icon">🎨</div>
+                        <div class="feature-text">风格迁移</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">🧠</div>
+                        <div class="feature-text">神经网络</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">⚡</div>
+                        <div class="feature-text">轻量模式</div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">📚</div>
+                        <div class="feature-text">原理介绍</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 示例图库 -->
+            <div class="features-section" style="border-top: 1px solid #eee; padding-top: 1.5rem;">
+                <h3 class="features-title">示例图库</h3>
+                <div id="sampleContent" class="sample-grid"></div>
+                <h4 style="font-size:0.85rem; color:#666; margin:12px 0 8px;">风格图像</h4>
+                <div id="sampleStyle" class="sample-grid"></div>
+                <div style="color:#999; font-size:0.75rem; margin-top:8px; text-align:center;">点击"作为内容/作为风格"可预选图片</div>
+            </div>
+        </div>
+
+        <!-- 背景装饰 -->
+        <div class="background-decoration">
+            <div class="decoration-circle circle-1"></div>
+            <div class="decoration-circle circle-2"></div>
+            <div class="decoration-circle circle-3"></div>
+        </div>
+    </div>
+
+    <style>
+        .sample-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 8px; }
+        @media (max-width: 500px) { .sample-grid { grid-template-columns: repeat(2, 1fr); } }
+        .sample-card { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: #fff; }
+        .sample-card img { width: 100%; height: 70px; object-fit: cover; display: block; }
+        .sample-actions { display: flex; padding: 4px; justify-content: center; }
+        .sample-actions button { border: 1px solid var(--border-color); background: #fff; color: #555; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 0.7rem; transition: all 0.2s; }
+        .sample-actions button:hover { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+    </style>
+
+    <script>
+    (function() {
+        var PASS = 'xdugaodai';
+        var form = document.getElementById('login-form');
+        var pwd = document.getElementById('password');
+        var btn = document.getElementById('login-btn');
+        var errMsg = document.getElementById('error-message');
+        var errText = document.getElementById('error-text');
+        var toggle = document.getElementById('password-toggle');
+
+        // 密码显示/隐藏
+        toggle.addEventListener('click', function() {
+            pwd.type = pwd.type === 'password' ? 'text' : 'password';
+        });
+
+        // 登录
+        function go(e) {
+            if (e) e.preventDefault();
+            var v = (pwd.value || '').trim();
+            if (v === PASS) {
+                try { localStorage.setItem('stylemigrate_authed', 'true'); } catch(e) {}
+                window.location.href = './app.html';
+            } else {
+                errMsg.classList.remove('d-none');
+                errText.textContent = '密码错误，请重试';
+                pwd.focus();
+            }
         }
-      }
 
-      $btn.addEventListener('click', go);
-      $pwd.addEventListener('keydown', function(e){ if (e.key === 'Enter') go(); });
+        form.addEventListener('submit', go);
+        pwd.addEventListener('input', function() { errMsg.classList.add('d-none'); });
 
-      // 处理示例点击，保存预设到 localStorage
-      document.addEventListener('click', function(e){
-        var t = e.target;
-        if (t && t.matches('.sample-actions button')) {
-          var which = t.getAttribute('data-which');
-          var url = t.getAttribute('data-url');
-          try {
-            if (which === 'content') localStorage.setItem('stylemigrate_preset_content', url);
-            if (which === 'style') localStorage.setItem('stylemigrate_preset_style', url);
-          } catch(_) {}
-          t.textContent = (which === 'content') ? '已选择内容' : '已选择风格';
-          setTimeout(function(){ t.textContent = (which === 'content') ? '作为内容' : '作为风格'; }, 1200);
+        // 示例图库
+        var CONTENT_SAMPLES = ['./img_content/cat.jpg','./img_content/dog.jpg','./img_content/flower.jpg','./img_content/xian_bell_tower.jpg'];
+        var STYLE_SAMPLES = ['./img_style/Monet.png','./img_style/Linear.jpg','./img_style/Vincent_starrynight.jpg','./img_style/BG_landscape_painting.jpg'];
+
+        function createCard(url, which) {
+            var card = document.createElement('div');
+            card.className = 'sample-card';
+            var img = document.createElement('img');
+            img.src = url; img.alt = url.split('/').pop();
+            img.onerror = function() { card.remove(); };
+            var actions = document.createElement('div');
+            actions.className = 'sample-actions';
+            var b = document.createElement('button');
+            b.setAttribute('data-which', which);
+            b.setAttribute('data-url', url);
+            b.textContent = which === 'content' ? '作为内容' : '作为风格';
+            actions.appendChild(b);
+            card.appendChild(img); card.appendChild(actions);
+            return card;
         }
-      });
+
+        var cBox = document.getElementById('sampleContent');
+        var sBox = document.getElementById('sampleStyle');
+        if (cBox) CONTENT_SAMPLES.forEach(function(u) { cBox.appendChild(createCard(u, 'content')); });
+        if (sBox) STYLE_SAMPLES.forEach(function(u) { sBox.appendChild(createCard(u, 'style')); });
+
+        document.addEventListener('click', function(e) {
+            var t = e.target;
+            if (t && t.matches('.sample-actions button')) {
+                var which = t.getAttribute('data-which');
+                var url = t.getAttribute('data-url');
+                try {
+                    if (which === 'content') localStorage.setItem('stylemigrate_preset_content', url);
+                    if (which === 'style') localStorage.setItem('stylemigrate_preset_style', url);
+                } catch(_) {}
+                t.textContent = which === 'content' ? '✓ 已选择' : '✓ 已选择';
+                setTimeout(function() { t.textContent = which === 'content' ? '作为内容' : '作为风格'; }, 1200);
+            }
+        });
     })();
-  </script>
-  <script src="watermark.js"></script>
+    </script>
+    <script src="watermark.js"></script>
 </body>
 </html>

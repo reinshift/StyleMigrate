@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>StyleMigrate - 风格迁移</title>
+  <title>StyleMigrate - 西电高代与矩阵实验室</title>
   <meta name="description" content="在浏览器中进行任意风格迁移：上传内容图像与风格图像，点击一键生成并下载结果。" />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="stylesheet" href="./style.css" />
@@ -17,19 +17,58 @@
     })();
   </script>
   <!-- 仅在通过校验后才会加载以下资源 -->
-  <!-- TensorFlow.js -->
+  <!-- TensorFlow.js（核心） -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js" defer></script>
   <!-- TFJS WASM 后端（老设备/无 WebGL 的兜底） -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@3.21.0/dist/tf-backend-wasm.min.js" defer></script>
   <!-- Magenta image (UMD) - Arbitrary Style Transfer -->
   <script src="https://cdn.jsdelivr.net/npm/@magenta/image@0.2.1" defer></script>
+  <style>
+    /* 模型加载遮罩 */
+    .loading-overlay {
+      display: none;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.85);
+      z-index: 100;
+      justify-content: center; align-items: center;
+      flex-direction: column; gap: 16px;
+    }
+    .loading-overlay.show { display: flex; }
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #e5e7eb; border-top-color: #2563eb;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: #6b7280; font-size: 14px; }
+    /* 低端设备提示横幅 */
+    .low-end-banner {
+      display: none; background: #fef3c7; border: 1px solid #f59e0b;
+      color: #92400e; padding: 10px 16px; border-radius: 10px;
+      margin-top: 12px; font-size: 13px; line-height: 1.5;
+    }
+    .low-end-banner.show { display: block; }
+    /* 轻量模式按钮 */
+    #fallbackBtn { border-style: dashed; }
+    #fallbackBtn:hover { border-style: solid; background: #f0f9ff; border-color: #0ea5e9; color: #0c4a6e; }
+    /* 设备诊断面板 */
+    .device-diag {
+      margin-bottom: 16px; padding: 12px 16px;
+      border-radius: 10px; font-size: 13px; line-height: 1.7;
+    }
+    .device-diag.danger  { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+    .device-diag.warning { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+    .device-diag.ok      { background: #f0f9ff; border: 1px solid #7dd3fc; color: #0c4a6e; }
+    .device-diag b { font-weight: 700; }
+    .device-diag .rec { margin-top: 6px; font-size: 12px; opacity: 0.85; }
+  </style>
 </head>
 <body>
   <nav class="topnav">
     <div class="topnav-inner">
       <a class="brand" href="./app.html">
         <img src="./xdu.svg" alt="Logo"/>
-        <span>StyleMigrate</span>
+        <span>🎓 西电高代 | StyleMigrate</span>
       </a>
       <div class="nav-links">
         <a href="./app.html">应用</a>
@@ -37,6 +76,11 @@
       </div>
     </div>
   </nav>
+  <!-- 模型加载遮罩 -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <div class="loading-text" id="loadingText">正在加载模型，请稍候…</div>
+  </div>
   <header class="app-header">
     <h1>StyleMigrate</h1>
     <p class="subtitle">内容图像 + 风格图像 = 风格迁移</p>
@@ -44,6 +88,7 @@
 
   <main class="container">
     <section class="panel upload-panel">
+      <div id="deviceDiag" class="device-diag"></div>
       <h2>1. 选择图像</h2>
       <div class="grid">
         <div class="card">
@@ -75,8 +120,12 @@
 
     <section class="panel action-panel">
       <h2>2. 风格迁移</h2>
+      <div id="lowEndBanner" class="low-end-banner">
+        ⚠️ 您的设备性能较低，系统已自动降低处理分辨率。推理可能需要 1-3 分钟，请耐心等待，期间<strong>不要切换标签页</strong>。如频繁失败，建议换用 4GB 以上内存的电脑。
+      </div>
       <div class="actions">
         <button id="runBtn" class="primary" disabled>开始风格迁移</button>
+        <button id="fallbackBtn" class="ghost" disabled title="轻量模式：不需要加载模型，使用色彩迁移，兼容所有设备">轻量模式</button>
         <button id="downloadBtn" class="ghost" disabled>下载结果</button>
       </div>
       <div class="status" id="status">请先选择内容图与风格图。</div>
@@ -88,9 +137,10 @@
     <section class="panel tips-panel">
       <h3>提示</h3>
       <ul>
-        <li>为获得更快速度，请使用带独显/支持 WebGL 的浏览器（Chrome/Edge）。</li>
-        <li>图像过大可能内存不足，建议宽或高不超过 1024px。</li>
-        <li>请等待模型加载好后再进行风格迁移。</li>
+        <li><b>开始风格迁移</b>：使用神经网络，效果最好，需要较好设备（推荐 4GB+ 内存、Chrome/Edge）。</li>
+        <li><b>轻量模式</b>：使用色彩迁移算法，不需要加载模型，<b>所有设备都能秒出结果</b>，但只迁移色彩风格，不迁移纹理笔触。</li>
+        <li>如果"开始风格迁移"失败，系统会自动降级到轻量模式。</li>
+        <li>为获得更好效果，请使用支持 WebGL 的浏览器（Chrome/Edge）。</li>
       </ul>
     </section>
   </main>
@@ -101,6 +151,88 @@
   </footer>
 
   <script src="./app.js" defer></script>
+  <script>
+    // ============ 设备诊断 & 加载遮罩管理 ============
+    (function() {
+      var mem = 0, cores = 2, webglOk = false, webglRenderer = '';
+      try { mem = Number(navigator.deviceMemory || 0); } catch(_){}
+      try { cores = navigator.hardwareConcurrency || 2; } catch(_){}
+
+      // 检测 WebGL 支持
+      try {
+        var c = document.createElement('canvas');
+        var gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
+        if (gl) {
+          webglOk = true;
+          var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+          if (dbg) webglRenderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '';
+        }
+      } catch(_){}
+
+      // 综合评级
+      var level, levelText, rec;
+      if (mem > 0 && mem <= 1) {
+        level = 'danger'; levelText = '❌ 不支持';
+        rec = '设备内存 ≤1GB，浏览器无法加载模型（需约 80MB 堆内存）。建议使用电脑浏览器。';
+      } else if ((mem > 0 && mem <= 2) || cores <= 1) {
+        level = 'danger'; levelText = '❌ 极大概率失败';
+        rec = '内存 ≤2GB 或单核 CPU，推理极可能超时或崩溃。建议换用 4GB 以上设备。';
+      } else if ((mem > 0 && mem <= 3) || !webglOk || cores <= 2) {
+        level = 'warning'; levelText = '⚠️ 可能较慢';
+        var reasons = [];
+        if (mem > 0 && mem <= 3) reasons.push('内存偏低（' + mem + 'GB）');
+        if (!webglOk) reasons.push('无 WebGL 加速（将使用 CPU/WASM，速度慢 5-10 倍）');
+        if (cores <= 2) reasons.push('CPU 核心较少（' + cores + '核）');
+        rec = reasons.join('；') + '。推理可能需要 1-3 分钟，请耐心等待，期间不要切换标签页。';
+      } else {
+        level = 'ok'; levelText = '✅ 设备满足要求';
+        rec = '内存 ' + mem + 'GB、' + cores + ' 核 CPU、WebGL 加速' + (webglRenderer ? '（' + webglRenderer + '）' : '') + '，可正常使用。';
+      }
+
+      // 渲染诊断面板
+      var diag = document.getElementById('deviceDiag');
+      if (diag) {
+        diag.className = 'device-diag ' + level;
+        diag.innerHTML =
+          '<div><b>设备诊断：</b>' + levelText + '</div>' +
+          '<div>内存：' + (mem ? mem + 'GB' : '未知') + '　|　CPU 核心：' + cores + '　|　WebGL：' + (webglOk ? '✅' : '❌') + '</div>' +
+          '<div class="rec">' + rec + '</div>';
+      }
+
+      // 低端设备警告横幅
+      var isLow = level === 'danger' || level === 'warning';
+      if (isLow) {
+        var banner = document.getElementById('lowEndBanner');
+        if (banner) banner.classList.add('show');
+      }
+
+      // 模型加载期间显示遮罩
+      var overlay = document.getElementById('loadingOverlay');
+      var loadingText = document.getElementById('loadingText');
+      if (overlay && level !== 'danger') {
+        overlay.classList.add('show');
+        var checkReady = setInterval(function() {
+          if (loadingText) {
+            var status = document.getElementById('status');
+            if (status && status.textContent) loadingText.textContent = status.textContent;
+          }
+          try {
+            var statusEl = document.getElementById('status');
+            if (statusEl && (
+              statusEl.textContent.indexOf('模型就绪') >= 0 ||
+              statusEl.textContent.indexOf('失败') >= 0 ||
+              statusEl.textContent.indexOf('预加载失败') >= 0
+            )) {
+              overlay.classList.remove('show');
+              clearInterval(checkReady);
+            }
+          } catch(_){}
+        }, 500);
+        // 45秒后强制隐藏
+        setTimeout(function() { overlay.classList.remove('show'); clearInterval(checkReady); }, 45000);
+      }
+    })();
+  </script>
   <script src="watermark.js"></script>
 </body>
 </html>

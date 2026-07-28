@@ -1,0 +1,294 @@
+/* ============================================
+   西电高代与矩阵实验室 - 统一登录页样式
+   ============================================ */
+
+:root {
+    --primary-color: #0ea5e9;
+    --primary-hover: #0284c7;
+    --secondary-color: #f0f9ff;
+    --text-color: #1e293b;
+    --border-color: #e2e8f0;
+    --error-color: #dc3545;
+    --shadow-light: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --shadow-medium: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+/* ---- 登录容器 ---- */
+.login-container {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    max-width: 460px;
+    padding: 2rem;
+}
+
+.login-card {
+    background: white;
+    border-radius: 20px;
+    padding: 2.5rem 2.5rem 2rem;
+    box-shadow: var(--shadow-medium);
+    position: relative;
+    overflow: hidden;
+}
+
+.login-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary-color), #38bdf8);
+}
+
+/* ---- Logo 区域 ---- */
+.logo-section {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.logo-container {
+    width: 80px; height: 80px;
+    margin: 0 auto 1.25rem;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--primary-color), #38bdf8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-light);
+    transition: transform 0.3s ease;
+}
+
+.logo-container:hover { transform: scale(1.05); }
+
+.app-logo {
+    width: 50px; height: 50px;
+    object-fit: contain;
+}
+
+.app-title {
+    font-family: "SimHei", "黑体", "Microsoft YaHei", sans-serif;
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: #000;
+    margin-bottom: 0.4rem;
+    line-height: 1.3;
+}
+
+.app-subtitle {
+    font-family: "SimHei", "黑体", "Microsoft YaHei", sans-serif;
+    color: var(--primary-color);
+    font-size: 0.95rem;
+    margin-bottom: 0;
+    font-weight: 500;
+}
+
+/* ---- 登录表单 ---- */
+.login-form-section { margin-bottom: 1.5rem; }
+
+.form-group { margin-bottom: 1.25rem; }
+
+.form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+.password-input-group { position: relative; }
+
+.password-input {
+    width: 100%;
+    padding: 0.875rem 3rem 0.875rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: 10px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background-color: #fff;
+}
+
+.password-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+}
+
+.password-toggle {
+    position: absolute;
+    right: 1rem; top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 4px;
+    transition: color 0.2s ease;
+    font-size: 1.1rem;
+}
+
+.password-toggle:hover { color: var(--primary-color); }
+
+.login-btn {
+    width: 100%;
+    padding: 0.875rem;
+    background: linear-gradient(135deg, var(--primary-color), #38bdf8);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.login-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(14, 165, 233, 0.3);
+}
+
+.login-btn:active { transform: translateY(0); }
+
+/* ---- 加载动画 ---- */
+.d-none { display: none !important; }
+
+.btn-loading {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.spinner {
+    width: 20px; height: 20px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top: 2px solid white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ---- 错误消息 ---- */
+.error-message {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--error-color);
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: rgba(220, 53, 69, 0.1);
+    border-radius: 8px;
+    border-left: 4px solid var(--error-color);
+}
+
+.error-icon { flex-shrink: 0; }
+
+/* ---- 功能预览 ---- */
+.features-section {
+    margin-bottom: 1rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #eee;
+}
+
+.features-title {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--text-color);
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.feature-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background-color: var(--secondary-color);
+    border-radius: 8px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-light);
+}
+
+.feature-icon { font-size: 1.2rem; }
+
+.feature-text {
+    font-size: 0.85rem;
+    color: #555;
+    font-weight: 500;
+}
+
+/* ---- 页脚 ---- */
+.login-footer {
+    text-align: center;
+    margin-top: 1.5rem;
+    color: #999;
+    font-size: 0.8rem;
+}
+
+.login-footer a {
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.login-footer a:hover { text-decoration: underline; }
+
+/* ---- 背景装饰 ---- */
+.background-decoration {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.decoration-circle {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(14, 165, 233, 0.06);
+    animation: float 6s ease-in-out infinite;
+}
+
+.circle-1 { width: 200px; height: 200px; top: 10%; left: 10%; animation-delay: 0s; }
+.circle-2 { width: 150px; height: 150px; top: 60%; right: 15%; animation-delay: 2s; }
+.circle-3 { width: 100px; height: 100px; bottom: 20%; left: 20%; animation-delay: 4s; }
+
+@keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); opacity: 0.7; }
+    50% { transform: translateY(-20px) rotate(180deg); opacity: 0.3; }
+}
+
+/* ---- 响应式 ---- */
+@media (max-width: 768px) {
+    .login-container { padding: 1rem; }
+    .login-card { padding: 2rem 1.5rem; }
+    .app-title { font-size: 1.35rem; }
+    .features-grid { grid-template-columns: 1fr; }
+}
