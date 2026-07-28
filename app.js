@@ -333,29 +333,40 @@
 
   async function loadOptimizedModels() {
     if (optModelsReady) return true;
-    if (!(window.tf && window.tf.engine)) return false;
+    if (!(window.tf && window.tf.engine)) {
+      console.warn('[轻量模式] TF.js 未加载');
+      return false;
+    }
 
     try {
       setStatus('正在加载优化模型（~12MB）…');
-      // 确保后端就绪
-      if (!tf.getBackend()) {
-        await tf.setBackend('webgl').catch(() => tf.setBackend('wasm')).catch(() => tf.setBackend('cpu'));
-        await tf.ready();
-      }
 
-      const STYLE_URL = 'https://storage.googleapis.com/magentadata/js/arbitrary-style-transfer/saved_model_style_js/model.json';
-      const TRANSFORM_URL = 'https://storage.googleapis.com/magentadata/js/arbitrary-style-transfer/saved_model_transformer_separable_js/model.json';
+      // 确保后端就绪（不管之前有没有设过，都重新确认）
+      try { await tf.setBackend('webgl'); } catch (_) {}
+      try { await tf.setBackend('wasm'); } catch (_) {}
+      try { await tf.setBackend('cpu'); } catch (_) {}
+      await tf.ready();
+      console.log('[轻量模式] 后端就绪:', tf.getBackend());
 
-      [optStyleNet, optTransformerNet] = await Promise.all([
-        tf.loadGraphModel(STYLE_URL, { fromTFHub: false }),
-        tf.loadGraphModel(TRANSFORM_URL, { fromTFHub: false })
-      ]);
+      // 使用 reiinakano 的 GitHub Pages 托管（国内可达）
+      const BASE = 'https://reiinakano.github.io/arbitrary-image-stylization-tfjs';
+      const STYLE_URL = BASE + '/saved_model_style_js/model.json';
+      const TRANSFORM_URL = BASE + '/saved_model_transformer_separable_js/model.json';
+
+      console.log('[轻量模式] 开始加载风格网络…');
+      optStyleNet = await tf.loadGraphModel(STYLE_URL, { fromTFHub: false });
+      console.log('[轻量模式] 风格网络加载完成');
+
+      console.log('[轻量模式] 开始加载转换网络…');
+      optTransformerNet = await tf.loadGraphModel(TRANSFORM_URL, { fromTFHub: false });
+      console.log('[轻量模式] 转换网络加载完成');
 
       optModelsReady = true;
       setStatus('优化模型就绪');
       return true;
     } catch (e) {
-      console.warn('优化模型加载失败：', e);
+      console.error('[轻量模式] 模型加载失败:', e.message, e);
+      optModelsReady = false;
       return false;
     }
   }
@@ -393,6 +404,7 @@
 
     if (isOpt && optModelsReady) {
       // ── 优化模型路径 ──
+      console.log('[轻量模式] 走优化模型路径');
       setStatus('正在使用优化模型处理…');
       const lowEnd = isLowEndDevice();
       const cMax = lowEnd ? 384 : 640;
@@ -421,11 +433,12 @@
         return;
       } catch (e) {
         tf.engine().endScope();
-        console.warn('优化模型推理失败，降级到色彩迁移：', e);
+        console.error('[轻量模式] 优化模型推理失败，降级到色彩迁移：', e.message, e);
       }
     }
 
     // ── 色彩迁移兜底 ──
+    console.log('[轻量模式] 优化模型不可用，走色彩迁移兜底');
     setStatus('正在使用色彩迁移处理…');
     const lowEnd = isLowEndDevice();
     const maxSide = lowEnd ? 600 : 1024;

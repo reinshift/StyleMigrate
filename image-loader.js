@@ -1,150 +1,127 @@
 /**
- * 图片加载增强模块
- * - 自动重试（网络抖动时 3 次重试，指数退避）
- * - 加载失败占位图（SVG 内联，零网络请求）
- * - 渐显动画（加载完成后淡入）
+ * 图片加载增强模块 v2
+ * - 自动重试（网络抖动 3 次，指数退避）
+ * - 失败占位图（内联 SVG，零网络请求，点击可重试）
+ * - 渐显动画（加载完成后淡入 0.4s）
  * - lazy loading（非首屏图片延迟加载）
+ * - 动态监听（MutationObserver 自动增强新插入的图片）
  */
-(function () {
+;(function () {
   'use strict';
 
   var MAX_RETRIES = 3;
-  var BASE_DELAY = 800; // 首次重试延迟 ms
+  var BASE_DELAY = 800;
 
-  // ── 失败占位图（内联 SVG，无需网络请求） ──
-  var PLACEHOLDER_SVG = 'data:image/svg+xml,' + encodeURIComponent(
+  // ── 内联 SVG 占位图 ──
+  var PLACEHOLDER = 'data:image/svg+xml,' + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">' +
     '<rect fill="#f1f5f9" width="400" height="300"/>' +
-    '<text x="200" y="140" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="14">图片加载失败</text>' +
-    '<text x="200" y="165" text-anchor="middle" fill="#cbd5e1" font-family="sans-serif" font-size="12">点击重试</text>' +
+    '<text x="200" y="140" text-anchor="middle" fill="#94a3b8" font-family="sans-serif" font-size="14">\u56FE\u7247\u52A0\u8F7D\u5931\u8D25</text>' +
+    '<text x="200" y="165" text-anchor="middle" fill="#cbd5e1" font-family="sans-serif" font-size="12">\u70B9\u51FB\u91CD\u8BD5</text>' +
     '<g transform="translate(188,180)" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round">' +
-    '<path d="M1 12a11 11 0 1 0 3-8"/>' +
-    '<polyline points="1 1 1 5 5 5"/>' +
-    '</g></svg>'
+    '<path d="M1 12a11 11 0 1 0 3-8"/><polyline points="1 1 1 5 5 5"/></g></svg>'
   );
 
-  // ── 注入样式 ──
-  var style = document.createElement('style');
-  style.textContent =
-    '.img-fade-in{opacity:0;transition:opacity .4s ease}' +
-    '.img-fade-in.img-loaded{opacity:1}' +
-    '.img-fade-in.img-error{opacity:1;cursor:pointer;filter:grayscale(.2)}';
-  (document.head || document.documentElement).appendChild(style);
+  // ── 注入渐显 CSS ──
+  var css = document.createElement('style');
+  css.textContent =
+    '.img-enhanced{transition:opacity .4s ease}' +
+    '.img-enhanced:not(.img-ok){opacity:0}' +
+    '.img-enhanced.img-ok{opacity:1}' +
+    '.img-enhanced.img-err{opacity:1;cursor:pointer;filter:grayscale(.15)}';
+  (document.head || document.documentElement).appendChild(css);
 
-  // ── 核心：为单个 img 元素应用增强 ──
+  // ── 增强单个 <img> ──
   function enhance(img) {
-    // 跳过已处理或 data: 图片
-    if (img.dataset.enhanced) return;
-    if (img.src && img.src.indexOf('data:') === 0 && img.src.indexOf('svg+xml') === -1) return;
-    img.dataset.enhanced = '1';
+    if (img.dataset.ie) return;
+    if (!img.src || img.src.indexOf('data:image/svg+xml') > -1) return;
+    img.dataset.ie = '1';
 
-    // 1) lazy loading（非首屏）
-    if (!img.hasAttribute('loading') && !isInViewport(img)) {
+    // 非首屏 → lazy loading
+    if (!img.hasAttribute('loading') && !inView(img)) {
       img.setAttribute('loading', 'lazy');
     }
 
-    // 2) 渐显动画
-    if (!img.classList.contains('img-fade-in')) {
-      img.classList.add('img-fade-in');
-    }
+    // 渐显 class
+    img.classList.add('img-enhanced');
 
-    // 3) 如果已经加载完成（缓存命中）
+    // 已缓存加载完成
     if (img.complete && img.naturalWidth > 0) {
-      img.classList.add('img-loaded');
+      img.classList.add('img-ok');
       return;
     }
 
-    var retryCount = 0;
-    var originalSrc = img.src;
+    var tries = 0, orig = img.src;
 
-    // 加载成功
-    function onSuccess() {
-      img.classList.add('img-loaded');
-      img.classList.remove('img-error');
-      img.removeEventListener('error', onError);
+    function onLoad() {
+      img.classList.add('img-ok');
+      img.classList.remove('img-err');
+      img.removeEventListener('error', onErr);
     }
 
-    // 加载失败 → 自动重试
-    function onError() {
-      img.removeEventListener('load', onSuccess);
-      if (retryCount < MAX_RETRIES) {
-        retryCount++;
-        var delay = BASE_DELAY * Math.pow(2, retryCount - 1);
+    function onErr() {
+      img.removeEventListener('load', onLoad);
+      if (tries < MAX_RETRIES) {
+        tries++;
         setTimeout(function () {
-          // 给 URL 加时间戳绕过缓存
-          var sep = originalSrc.indexOf('?') > -1 ? '&' : '?';
-          img.src = originalSrc + sep + '_retry=' + Date.now() + '_' + retryCount;
-        }, delay);
+          img.src = orig + (orig.indexOf('?') > -1 ? '&' : '?') + '_r=' + tries + '&' + Date.now();
+        }, BASE_DELAY * Math.pow(2, tries - 1));
       } else {
-        // 最终失败 → 显示占位图
-        img.src = PLACEHOLDER_SVG;
-        img.classList.add('img-error');
-        img.title = '图片加载失败，点击重试';
-        img.style.cursor = 'pointer';
-        // 点击占位图重试
-        img.addEventListener('click', function retryClick() {
-          retryCount = 0;
-          img.removeEventListener('click', retryClick);
-          img.style.cursor = '';
+        img.removeEventListener('error', onErr);
+        img.src = PLACEHOLDER;
+        img.classList.add('img-err');
+        img.title = '\u56FE\u7247\u52A0\u8F7D\u5931\u8D25\uFF0C\u70B9\u51FB\u91CD\u8BD5';
+        img.onclick = function () {
+          tries = 0;
+          img.classList.remove('img-err');
           img.title = '';
-          img.classList.remove('img-error');
-          img.src = originalSrc;
-          bindEvents();
-        });
+          img.src = orig;
+          bind();
+        };
       }
     }
 
-    function bindEvents() {
-      img.addEventListener('load', onSuccess, { once: true });
-      img.addEventListener('error', onError);
+    function bind() {
+      img.addEventListener('load', onLoad, { once: true });
+      img.addEventListener('error', onErr);
     }
-
-    bindEvents();
+    bind();
   }
 
-  // ── 判断元素是否在视口内 ──
-  function isInViewport(el) {
+  function inView(el) {
     try {
-      var rect = el.getBoundingClientRect();
-      return rect.top < window.innerHeight + 200 && rect.bottom > -200 &&
-             rect.left < window.innerWidth + 200 && rect.right > -200;
+      var r = el.getBoundingClientRect();
+      return r.top < innerHeight + 200 && r.bottom > -200;
     } catch (_) { return true; }
   }
 
-  // ── 增强所有现有 img ──
-  function enhanceAll() {
-    var imgs = document.querySelectorAll('img:not([data-enhanced])');
-    for (var i = 0; i < imgs.length; i++) {
-      enhance(imgs[i]);
-    }
+  function scanAll() {
+    var imgs = document.querySelectorAll('img:not([data-ie])');
+    for (var i = 0; i < imgs.length; i++) enhance(imgs[i]);
   }
 
-  // ── 监听动态插入的 img（MutationObserver） ──
-  function observe() {
-    var observer = new MutationObserver(function (mutations) {
-      for (var i = 0; i < mutations.length; i++) {
-        var added = mutations[i].addedNodes;
-        for (var j = 0; j < added.length; j++) {
-          var node = added[j];
-          if (node.nodeName === 'IMG') {
-            enhance(node);
-          } else if (node.querySelectorAll) {
-            var imgs = node.querySelectorAll('img:not([data-enhanced])');
-            for (var k = 0; k < imgs.length; k++) {
-              enhance(imgs[k]);
-            }
+  // 立即扫描（脚本在 body 末尾，DOM 已就绪）
+  scanAll();
+
+  // 动态插入的图片
+  if (typeof MutationObserver !== 'undefined') {
+    var mo = new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var nodes = muts[i].addedNodes;
+        for (var j = 0; j < nodes.length; j++) {
+          var n = nodes[j];
+          if (n.nodeType !== 1) continue;
+          if (n.tagName === 'IMG') enhance(n);
+          else if (n.querySelectorAll) {
+            var list = n.querySelectorAll('img:not([data-ie])');
+            for (var k = 0; k < list.length; k++) enhance(list[k]);
           }
         }
       }
     });
-    observer.observe(document.body || document.documentElement, { childList: true, subtree: true });
+    mo.observe(document.documentElement, { childList: true, subtree: true });
   }
 
-  // ── 初始化 ──
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () { enhanceAll(); observe(); });
-  } else {
-    enhanceAll();
-    observe();
-  }
+  // 页面完全加载后再扫一遍（兜底慢速加载的图片）
+  window.addEventListener('load', scanAll);
 })();
