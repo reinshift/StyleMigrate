@@ -1,0 +1,85 @@
+/* ================================================================
+   西电高代与矩阵实验室 — 统一设计令牌 (Design Tokens)
+   所有项目共享此文件，确保视觉一致性
+   ================================================================ */
+
+:root {
+  /* ── 色彩系统 ── */
+  --color-primary:        #0ea5e9;
+  --color-primary-hover:  #0284c7;
+  --color-primary-light:  #38bdf8;
+  --color-primary-ring:   rgba(14, 165, 233, 0.15);
+  --color-primary-subtle: #f0f9ff;
+  --color-primary-muted:  #e0f2fe;
+
+  --color-text:           #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-muted:     #94a3b8;
+
+  --color-surface:        #ffffff;
+  --color-surface-raised: #f8fafc;
+  --color-border:         #e2e8f0;
+  --color-border-hover:   #cbd5e1;
+
+  --color-error:          #dc2626;
+  --color-error-subtle:   rgba(220, 38, 38, 0.08);
+  --color-success:        #16a34a;
+  --color-warning:        #d97706;
+
+  /* ── 字体 ── */
+  --font-sans:  "SF Pro Text", ui-sans-serif, -apple-system, BlinkMacSystemFont,
+                "Segoe UI", Roboto, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-heading: "SimHei", "黑体", "Noto Sans SC", "Microsoft YaHei", var(--font-sans);
+  --font-mono:  ui-monospace, "Cascadia Code", "Fira Code", monospace;
+
+  /* ── 间距（4px 基准网格） ── */
+  --space-1:   0.25rem;   /* 4px  */
+  --space-2:   0.5rem;    /* 8px  */
+  --space-3:   0.75rem;   /* 12px */
+  --space-4:   1rem;      /* 16px */
+  --space-5:   1.25rem;   /* 20px */
+  --space-6:   1.5rem;    /* 24px */
+  --space-8:   2rem;      /* 32px */
+  --space-10:  2.5rem;    /* 40px */
+  --space-12:  3rem;      /* 48px */
+
+  /* ── 圆角 ── */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  16px;
+  --radius-xl:  20px;
+  --radius-full: 9999px;
+
+  /* ── 阴影 ── */
+  --shadow-sm:  0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md:  0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg:  0 12px 32px rgba(0, 0, 0, 0.12);
+  --shadow-ring: 0 0 0 3px var(--color-primary-ring);
+
+  /* ── 动效 ── */
+  --ease-out:       cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out:    cubic-bezier(0.45, 0, 0.55, 1);
+  --duration-fast:   150ms;
+  --duration-normal: 250ms;
+  --duration-slow:   400ms;
+}
+
+/* ── 动画降级 ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── 通用入场动画 ── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.7; }
+  50%      { transform: translateY(-20px) rotate(180deg); opacity: 0.3; }
+}
