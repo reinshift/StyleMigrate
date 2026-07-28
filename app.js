@@ -21,6 +21,7 @@
   let model = null;
   let modelReady = false;
   let modelLoading = false;
+  let modelLoadPromise = null; // 缓存加载 Promise，防止并发重复加载
   let resultReady = false;
   let isRunning = false; // 防止并发推理
 
@@ -173,6 +174,8 @@
 
   async function ensureModel() {
     if (model) return model;
+    // 如果正在加载，等待现有加载完成，不重复启动
+    if (modelLoadPromise) return modelLoadPromise;
     if (!(window.tf && window.tf.engine)) {
       throw new Error('TensorFlow.js 未正确加载，请刷新页面重试');
     }
@@ -212,7 +215,7 @@
           e.preventDefault();
           console.warn('WebGL 上下文已丢失');
           setStatus('⚠️ WebGL 上下文丢失，正在尝试恢复…');
-          model = null; modelReady = false;
+          model = null; modelReady = false; modelLoadPromise = null;
           setTimeout(async () => {
             try {
               await tf.setBackend('webgl');
@@ -229,35 +232,40 @@
 
     setStatus('正在加载模型…（后端：' + backend + '）');
     modelLoading = true;
-    model = new mi.ArbitraryStyleTransferNetwork();
-    if (typeof model.initialize === 'function') {
-      await withRetry(() => model.initialize(), {
-        retries: 1,
-        baseDelay: 800,
-        timeoutMs: 60000,
-        onAttempt: (k) => setStatus('正在加载模型…（后端：' + backend + (k ? '，重试 ' + (k + 1) : '') + '）')
-      });
-    }
-    modelReady = true;
-    modelLoading = false;
-    setStatus('模型就绪（后端：' + backend + '）');
-    return model;
+    // 缓存 Promise，防止并发重复加载
+    modelLoadPromise = (async () => {
+      try {
+        model = new mi.ArbitraryStyleTransferNetwork();
+        if (typeof model.initialize === 'function') {
+          await withRetry(() => model.initialize(), {
+            retries: 1,
+            baseDelay: 800,
+            timeoutMs: 60000,
+            onAttempt: (k) => setStatus('正在加载模型…（后端：' + backend + (k ? '，重试 ' + (k + 1) : '') + '）')
+          });
+        }
+        modelReady = true;
+        setStatus('模型就绪（后端：' + backend + '）');
+        return model;
+      } finally {
+        modelLoading = false;
+        modelLoadPromise = null;
+      }
+    })();
+    return modelLoadPromise;
   }
 
-  // ============ 轻量降级方案：纯 Canvas 色彩风格迁移 ============
+  // ============ 轻量模式：优化模型 + 色彩迁移降级 ============
 
-  // RGB ↔ LAB 转换（用于色彩统计匹配）
+  // ── Reinhard 色彩迁移工具（兜底用） ──
   function rgbToLab(r, g, b) {
-    // sRGB → linear
     let rl = r / 255, gl = g / 255, bl = b / 255;
     rl = rl > 0.04045 ? Math.pow((rl + 0.055) / 1.055, 2.4) : rl / 12.92;
     gl = gl > 0.04045 ? Math.pow((gl + 0.055) / 1.055, 2.4) : gl / 12.92;
     bl = bl > 0.04045 ? Math.pow((bl + 0.055) / 1.055, 2.4) : bl / 12.92;
-    // linear → XYZ (D65)
     let x = (rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375) / 0.95047;
     let y = (rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750) / 1.00000;
     let z = (rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041) / 1.08883;
-    // XYZ → LAB
     const f = (t) => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16 / 116);
     x = f(x); y = f(y); z = f(z);
     return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
@@ -267,11 +275,9 @@
     let y = (L + 16) / 116, x = a / 500 + y, z = y - b / 200;
     const finv = (t) => t > 0.206893 ? t * t * t : (t - 16 / 116) / 7.787;
     x = 0.95047 * finv(x); y = 1.00000 * finv(y); z = 1.08883 * finv(z);
-    // XYZ → linear RGB
     let rl = x * 3.2404542 + y * -1.5371385 + z * -0.4985314;
     let gl = x * -0.9692660 + y * 1.8760108 + z * 0.0415560;
     let bl = x * 0.0556434 + y * -0.2040259 + z * 1.0572252;
-    // linear → sRGB
     const gamma = (v) => v > 0.0031308 ? 1.055 * Math.pow(v, 1 / 2.4) - 0.055 : 12.92 * v;
     return [
       Math.max(0, Math.min(255, Math.round(gamma(rl) * 255))),
@@ -280,36 +286,24 @@
     ];
   }
 
-  /**
-   * Reinhard 色彩迁移 + 结构保持
-   * 将风格图的色彩统计迁移到内容图上，同时保持内容图的空间结构
-   */
   function fallbackColorTransfer(contentCanvas, styleCanvas, strength) {
     strength = strength || 0.85;
-
     const cw = contentCanvas.width, ch = contentCanvas.height;
     const ctxC = contentCanvas.getContext('2d', { willReadFrequently: true });
     const contentData = ctxC.getImageData(0, 0, cw, ch);
-
     const sw = styleCanvas.width, sh = styleCanvas.height;
     const ctxS = styleCanvas.getContext('2d', { willReadFrequently: true });
     const styleData = ctxS.getImageData(0, 0, sw, sh);
-
-    // 采样统计（每隔几个像素，降低计算量）
     const step = Math.max(1, Math.floor(Math.sqrt(sw * sh / 5000)));
     let sL = [], sA = [], sB = [];
     for (let i = 0; i < styleData.data.length; i += 4 * step) {
       const lab = rgbToLab(styleData.data[i], styleData.data[i + 1], styleData.data[i + 2]);
       sL.push(lab[0]); sA.push(lab[1]); sB.push(lab[2]);
     }
-
-    // 风格图 LAB 均值和标准差
     const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
     const std = (arr, m) => Math.sqrt(arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length);
     const sMeanL = mean(sL), sMeanA = mean(sA), sMeanB = mean(sB);
     const sStdL = std(sL, sMeanL) || 1, sStdA = std(sA, sMeanA) || 1, sStdB = std(sB, sMeanB) || 1;
-
-    // 内容图 LAB 统计
     let cL = [], cA = [], cB = [];
     for (let i = 0; i < contentData.data.length; i += 4 * step) {
       const lab = rgbToLab(contentData.data[i], contentData.data[i + 1], contentData.data[i + 2]);
@@ -317,36 +311,74 @@
     }
     const cMeanL = mean(cL), cMeanA = mean(cA), cMeanB = mean(cB);
     const cStdL = std(cL, cMeanL) || 1, cStdA = std(cA, cMeanA) || 1, cStdB = std(cB, cMeanB) || 1;
-
-    // 对每个像素应用 Reinhard 迁移
     const out = ctxC.createImageData(cw, ch);
     for (let i = 0; i < contentData.data.length; i += 4) {
-      const r = contentData.data[i], g = contentData.data[i + 1], b = contentData.data[i + 2];
-      const lab = rgbToLab(r, g, b);
-
-      // Reinhard: 将内容图的 LAB 分布映射到风格图的分布
+      const lab = rgbToLab(contentData.data[i], contentData.data[i + 1], contentData.data[i + 2]);
       let nL = ((lab[0] - cMeanL) / cStdL) * sStdL + sMeanL;
       let nA = ((lab[1] - cMeanA) / cStdA) * sStdA + sMeanA;
       let nB = ((lab[2] - cMeanB) / cStdB) * sStdB + sMeanB;
-
-      // 用 strength 控制混合程度
       nL = lab[0] * (1 - strength) + nL * strength;
       nA = lab[1] * (1 - strength) + nA * strength;
       nB = lab[2] * (1 - strength) + nB * strength;
-
       const rgb = labToRgb(nL, nA, nB);
-      out.data[i] = rgb[0];
-      out.data[i + 1] = rgb[1];
-      out.data[i + 2] = rgb[2];
-      out.data[i + 3] = 255;
+      out.data[i] = rgb[0]; out.data[i + 1] = rgb[1]; out.data[i + 2] = rgb[2]; out.data[i + 3] = 255;
     }
-
     return out;
   }
 
-  // 轻量风格迁移（不需要 TF.js，纯 Canvas 操作）
+  // ── 优化模型（MobileNet-v2 + 可分离卷积，~12MB） ──
+  let optStyleNet = null;
+  let optTransformerNet = null;
+  let optModelsReady = false;
+
+  async function loadOptimizedModels() {
+    if (optModelsReady) return true;
+    if (!(window.tf && window.tf.engine)) return false;
+
+    try {
+      setStatus('正在加载优化模型（~12MB）…');
+      // 确保后端就绪
+      if (!tf.getBackend()) {
+        await tf.setBackend('webgl').catch(() => tf.setBackend('wasm')).catch(() => tf.setBackend('cpu'));
+        await tf.ready();
+      }
+
+      const STYLE_URL = 'https://storage.googleapis.com/magentadata/js/arbitrary-style-transfer/saved_model_style_js/model.json';
+      const TRANSFORM_URL = 'https://storage.googleapis.com/magentadata/js/arbitrary-style-transfer/saved_model_transformer_separable_js/model.json';
+
+      [optStyleNet, optTransformerNet] = await Promise.all([
+        tf.loadGraphModel(STYLE_URL, { fromTFHub: false }),
+        tf.loadGraphModel(TRANSFORM_URL, { fromTFHub: false })
+      ]);
+
+      optModelsReady = true;
+      setStatus('优化模型就绪');
+      return true;
+    } catch (e) {
+      console.warn('优化模型加载失败：', e);
+      return false;
+    }
+  }
+
+  function stylizeWithOptModels(contentCanvas, styleCanvas) {
+    return tf.tidy(() => {
+      // 预处理：转为 float32 张量，归一化到 [0,1]
+      let content = tf.browser.fromPixels(contentCanvas, 3).toFloat().div(255).expandDims();
+      let style = tf.browser.fromPixels(styleCanvas, 3).toFloat().div(255).expandDims();
+
+      // 风格网络：提取 100 维风格向量
+      const styleVector = optStyleNet.predict(style);
+      // 转换网络：内容 + 风格向量 → 风格化图像
+      const stylized = optTransformerNet.predict([content, styleVector]);
+
+      // 输出形状 [1, h, w, 3]，值域 [0,1]
+      return stylized.squeeze();
+    });
+  }
+
+  // 轻量风格迁移：优化模型优先，色彩迁移兜底
   async function runFallbackStyleTransfer() {
-    setStatus('正在使用轻量模式处理…（无需加载模型，秒出结果）');
+    const isOpt = await loadOptimizedModels();
 
     const contentImg = await new Promise((res, rej) => {
       const i = new Image(); i.crossOrigin = 'anonymous';
@@ -359,33 +391,62 @@
       i.src = els.stylePreview.src;
     });
 
-    // 轻量模式下使用较小尺寸
+    if (isOpt && optModelsReady) {
+      // ── 优化模型路径 ──
+      setStatus('正在使用优化模型处理…');
+      const lowEnd = isLowEndDevice();
+      const cMax = lowEnd ? 384 : 640;
+      const sMax = lowEnd ? 192 : 384;
+      const contentCanvas = downscaleToCanvas(contentImg, cMax);
+      const styleCanvas = downscaleToCanvas(styleImg, sMax);
+      contentImg.src = ''; styleImg.src = '';
+
+      await new Promise(r => setTimeout(r, 30));
+
+      try {
+        tf.engine().startScope();
+        const result = stylizeWithOptModels(contentCanvas, styleCanvas);
+        const [h, w] = result.shape;
+        els.resultCanvas.width = w;
+        els.resultCanvas.height = h;
+        await tf.browser.toPixels(result, els.resultCanvas);
+        result.dispose();
+        tf.engine().endScope();
+
+        contentCanvas.width = 0; contentCanvas.height = 0;
+        styleCanvas.width = 0; styleCanvas.height = 0;
+        resultReady = true;
+        els.downloadBtn.disabled = false;
+        setStatus('✅ 优化模型完成！（MobileNet+可分离卷积）可点击"下载结果"。');
+        return;
+      } catch (e) {
+        tf.engine().endScope();
+        console.warn('优化模型推理失败，降级到色彩迁移：', e);
+      }
+    }
+
+    // ── 色彩迁移兜底 ──
+    setStatus('正在使用色彩迁移处理…');
     const lowEnd = isLowEndDevice();
     const maxSide = lowEnd ? 600 : 1024;
     const contentCanvas = downscaleToCanvas(contentImg, maxSide);
     const styleCanvas = downscaleToCanvas(styleImg, Math.min(maxSide, 512));
-
-    // 立即释放 Image
     contentImg.src = ''; styleImg.src = '';
 
-    await new Promise(r => setTimeout(r, 50)); // 让 UI 更新
+    await new Promise(r => setTimeout(r, 50));
 
-    // 色彩迁移
     const result = fallbackColorTransfer(contentCanvas, styleCanvas, 0.85);
-
-    // 绘制结果
     els.resultCanvas.width = contentCanvas.width;
     els.resultCanvas.height = contentCanvas.height;
     const ctx = els.resultCanvas.getContext('2d');
     ctx.putImageData(result, 0, 0);
 
-    // 清理
     contentCanvas.width = 0; contentCanvas.height = 0;
     styleCanvas.width = 0; styleCanvas.height = 0;
 
     resultReady = true;
     els.downloadBtn.disabled = false;
-    setStatus('✅ 轻量模式完成！（色彩迁移，无神经网络）可点击"下载结果"。');
+    setStatus('✅ 色彩迁移完成！可点击"下载结果"。');
   }
 
   // ============ 核心推理（带自动降级） ============
@@ -402,24 +463,19 @@
       setStatus('处理中…');
 
       if (!modelReady) {
-        if (modelLoading) {
-          setStatus('模型正在加载，请稍候…');
-        } else {
-          // 模型未加载，尝试加载；如果设备太差，直接走轻量模式
-          setStatus('正在尝试加载模型…');
+        setStatus('正在加载模型，请稍候…');
+        try {
+          await withTimeout(ensureModel(), 60000, '模型加载');
+        } catch (modelErr) {
+          console.warn('模型加载失败，降级到轻量模式：', modelErr);
           try {
-            await withTimeout(ensureModel(), 30000, '模型加载');
-          } catch (modelErr) {
-            console.warn('模型加载失败，降级到轻量模式：', modelErr);
-            try {
-              await runFallbackStyleTransfer();
-            } catch (_) {
-              setStatus('⚠️ 处理失败，请刷新页面重试');
-            }
-            isRunning = false;
-            enableRunIfReady();
-            return;
+            await runFallbackStyleTransfer();
+          } catch (_) {
+            setStatus('⚠️ 处理失败，请刷新页面重试');
           }
+          isRunning = false;
+          enableRunIfReady();
+          return;
         }
         if (!modelReady) {
           isRunning = false;
@@ -551,7 +607,7 @@
         console.warn('神经网络推理失败，自动降级到轻量色彩迁移模式');
         try {
           await runFallbackStyleTransfer();
-          return; // 轻量模式成功，直接返回
+          return;
         } catch (fallbackErr) {
           console.error('轻量模式也失败了：', fallbackErr);
           setStatus('⚠️ 两种模式均失败，请刷新页面重试');
@@ -559,13 +615,6 @@
         }
       }
 
-      if (isOom) {
-        msg = '⚠️ 内存不足！正在尝试轻量模式…';
-      } else if (isTimeout) {
-        msg = '⚠️ ' + msg + '。正在尝试轻量模式…';
-      } else if (isWebGL) {
-        msg = '⚠️ WebGL 不可用，正在尝试轻量模式…';
-      }
       setStatus('发生错误：' + msg);
     } finally {
       // ★ 关键修复：无论如何都清理临时资源
