@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>轻量模型完整测试</title>
+<style>
+body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+#log { white-space: pre-wrap; line-height: 1.8; margin: 20px 0; }
+.ok { color: #6a9955; } .err { color: #f44747; } .info { color: #569cd6; } .warn { color: #ce9178; }
+canvas { border: 1px solid #444; margin: 10px; max-width: 400px; }
+.row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+label { display: block; margin: 10px 0 5px; color: #9cdcfe; }
+select, button { padding: 8px 16px; font-family: monospace; font-size: 14px; margin: 5px; }
+</style>
+</head>
+<body>
+<h2>轻量模型完整推理测试</h2>
+<div>
+  <label>选择测试图片:</label>
+  <select id="imgSelect">
+    <option value="">-- 选择 --</option>
+  </select>
+  <button id="runBtn" disabled>运行推理</button>
+</div>
+<div class="row">
+  <div><label>内容图</label><canvas id="c1"></canvas></div>
+  <div><label>风格图</label><canvas id="c2"></canvas></div>
+  <div><label>结果</label><canvas id="c3"></canvas></div>
+</div>
+<div id="log"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+<script>
+var logEl = document.getElementById('log');
+function out(msg, cls) {
+  var d = document.createElement('div');
+  d.className = cls || '';
+  d.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg;
+  logEl.appendChild(d);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+var CONTENT_SAMPLES = ['./img_content/cat.jpg','./img_content/dog.jpg','./img_content/flower.jpg','./img_content/xian_bell_tower.jpg'];
+var STYLE_SAMPLES = ['./img_style/Monet.png','./img_style/Linear.jpg','./img_style/Vincent_starrynight.jpg','./img_style/BG_landscape_painting.jpg'];
+var sel = document.getElementById('imgSelect');
+CONTENT_SAMPLES.forEach(function(c) {
+  STYLE_SAMPLES.forEach(function(s) {
+    var o = document.createElement('option');
+    o.value = c + '|' + s;
+    o.textContent = c.split('/').pop() + ' + ' + s.split('/').pop();
+    sel.appendChild(o);
+  });
+});
+
+var styleNet, transNet;
+var runBtn = document.getElementById('runBtn');
+
+async function init() {
+  try { await tf.setBackend('webgl'); } catch(_){}
+  try { await tf.setBackend('wasm'); } catch(_){}
+  try { await tf.setBackend('cpu'); } catch(_){}
+  await tf.ready();
+  out('后端: ' + tf.getBackend(), 'ok');
+
+  var BASE = 'https://cdn.jsdelivr.net/gh/reiinakano/arbitrary-image-stylization-tfjs@master';
+  out('加载风格网络…', 'info');
+  var t0 = Date.now();
+  styleNet = await tf.loadGraphModel(BASE + '/saved_model_style_js/model.json');
+  out('风格网络完成 (' + (Date.now()-t0) + 'ms)', 'ok');
+
+  out('加载转换网络…（较大，请等待）', 'info');
+  t0 = Date.now();
+  transNet = await tf.loadGraphModel(BASE + '/saved_model_transformer_separable_js/model.json');
+  out('转换网络完成 (' + (Date.now()-t0) + 'ms)', 'ok');
+
+  runBtn.disabled = false;
+  out('模型就绪！选择图片后点击"运行推理"', 'ok');
+}
+
+function loadImg(src) {
+  return new Promise(function(res, rej) {
+    var i = new Image(); i.crossOrigin = 'anonymous';
+    i.onload = function() { res(i); };
+    i.onerror = function() { rej(new Error('加载失败: ' + src)); };
+    i.src = src;
+  });
+}
+
+function imgToCanvas(img, maxSide) {
+  var w = img.width, h = img.height;
+  if (Math.max(w,h) > maxSide) {
+    if (w >= h) { h = Math.round(h * maxSide / w); w = maxSide; }
+    else { w = Math.round(w * maxSide / h); h = maxSide; }
+  }
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  return c;
+}
+
+runBtn.addEventListener('click', async function() {
+  var val = sel.value;
+  if (!val) { alert('请选择图片'); return; }
+  var parts = val.split('|');
+  runBtn.disabled = true;
+
+  try {
+    out('加载图片…', 'info');
+    var cImg = await loadImg(parts[0]);
+    var sImg = await loadImg(parts[1]);
+
+    var cCanvas = imgToCanvas(cImg, 384);
+    var sCanvas = imgToCanvas(sImg, 192);
+
+    // 显示原图
+    var c1 = document.getElementById('c1'); c1.width = cCanvas.width; c1.height = cCanvas.height;
+    c1.getContext('2d').drawImage(cCanvas, 0, 0);
+    var c2 = document.getElementById('c2'); c2.width = sCanvas.width; c2.height = sCanvas.height;
+    c2.getContext('2d').drawImage(sCanvas, 0, 0);
+
+    out('推理中… content=' + cCanvas.width + 'x' + cCanvas.height + ' style=' + sCanvas.width + 'x' + sCanvas.height, 'info');
+    var t0 = Date.now();
+
+    tf.engine().startScope();
+    var content = tf.browser.fromPixels(cCanvas, 3).toFloat().div(255).expandDims();
+    var style = tf.browser.fromPixels(sCanvas, 3).toFloat().div(255).expandDims();
+    out('content: ' + content.shape + '  style: ' + style.shape, 'info');
+
+    var styleVec = styleNet.predict(style);
+    out('styleVec: ' + styleVec.shape, 'info');
+
+    var result = transNet.predict([content, styleVec]);
+    var squeezed = result.squeeze();
+    out('result: ' + squeezed.shape, 'info');
+
+    var c3 = document.getElementById('c3');
+    c3.width = squeezed.shape[1]; c3.height = squeezed.shape[0];
+    await tf.browser.toPixels(squeezed, c3);
+
+    squeezed.dispose(); styleVec.dispose(); content.dispose(); style.dispose();
+    tf.engine().endScope();
+
+    out('✅ 推理成功! 耗时: ' + (Date.now()-t0) + 'ms', 'ok');
+  } catch(e) {
+    out('❌ 推理失败: ' + e.message, 'err');
+    console.error(e);
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+
+init().catch(function(e) { out('初始化失败: ' + e.message, 'err'); });
+</script>
+</body>
+</html>

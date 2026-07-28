@@ -58,21 +58,31 @@
     throw lastErr;
   }
 
-  function getDeviceMemoryGB() {
-    try { return Math.max(0, Number(navigator.deviceMemory || 0)); } catch (_) { return 0; }
+  // ── 设备探测 ──
+  function getDeviceProfile() {
+    var mem = 0, cores = 2, gpu = '', webgl = false;
+    try { mem = Number(navigator.deviceMemory || 0); } catch(_){}
+    try { cores = navigator.hardwareConcurrency || 2; } catch(_){}
+    try {
+      var c = document.createElement('canvas');
+      var gl = c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (gl) {
+        webgl = true;
+        var ext = gl.getExtension('WEBGL_debug_renderer_info');
+        if (ext) gpu = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '';
+      }
+    } catch(_){}
+    var tier;
+    if (!webgl || (mem > 0 && mem <= 2) || cores <= 1) tier = 'low';
+    else if ((mem > 0 && mem <= 4) || cores <= 2) tier = 'mid';
+    else tier = 'high';
+    return { mem: mem, cores: cores, gpu: gpu, webgl: webgl, tier: tier };
   }
 
-  function getHardwareConcurrency() {
-    try { return navigator.hardwareConcurrency || 2; } catch (_) { return 2; }
-  }
+  var deviceProfile = getDeviceProfile();
+  console.log('[设备] tier=' + deviceProfile.tier + ' mem=' + deviceProfile.mem + 'GB cores=' + deviceProfile.cores + ' webgl=' + deviceProfile.webgl + ' gpu=' + deviceProfile.gpu);
 
-  // 判断是否为低端设备（与诊断面板逻辑一致）
-  function isLowEndDevice() {
-    const mem = getDeviceMemoryGB();
-    const cores = getHardwareConcurrency();
-    // 内存 ≤3GB 或 核心数 ≤2 视为低端
-    return (mem > 0 && mem <= 3) || cores <= 2;
-  }
+  function isLowEndDevice() { return deviceProfile.tier === 'low'; }
 
   function pickSizesByBackend(backend) {
     const mem = getDeviceMemoryGB();
@@ -255,42 +265,55 @@
     return modelLoadPromise;
   }
 
-  // ============ 轻量模式：优化模型（MobileNet-v2 + 可分离卷积，~12MB） ============
+  // ============ 优化模型（MobileNet-v2 + 可分离卷积，~12MB） ============
 
   let optStyleNet = null;
   let optTransformerNet = null;
   let optModelsReady = false;
+  let optLoadPromise = null;
 
   async function loadOptimizedModels() {
     if (optModelsReady) return;
+    if (optLoadPromise) return optLoadPromise;
+
     if (!(window.tf && window.tf.engine)) throw new Error('TensorFlow.js 未加载');
 
-    setStatus('正在加载优化模型（~12MB）…');
+    optLoadPromise = (async function() {
+      // 确保后端就绪
+      try { await tf.setBackend('webgl'); } catch (_) {}
+      try { await tf.setBackend('wasm'); } catch (_) {}
+      try { await tf.setBackend('cpu'); } catch (_) {}
+      await tf.ready();
+      console.log('[优化模型] 后端:', tf.getBackend());
 
-    // 确保后端就绪
-    try { await tf.setBackend('webgl'); } catch (_) {}
-    try { await tf.setBackend('wasm'); } catch (_) {}
-    try { await tf.setBackend('cpu'); } catch (_) {}
-    await tf.ready();
-    console.log('[轻量模式] 后端:', tf.getBackend());
+      var BASE = 'https://cdn.jsdelivr.net/gh/reiinakano/arbitrary-image-stylization-tfjs@master';
 
-    var BASE = 'https://cdn.jsdelivr.net/gh/reiinakano/arbitrary-image-stylization-tfjs@master';
-    console.log('[轻量模式] 加载风格网络…');
-    optStyleNet = await tf.loadGraphModel(BASE + '/saved_model_style_js/model.json');
-    console.log('[轻量模式] 加载转换网络…');
-    optTransformerNet = await tf.loadGraphModel(BASE + '/saved_model_transformer_separable_js/model.json');
-    optModelsReady = true;
-    console.log('[轻量模式] 两个模型加载完成');
+      setStatus('加载风格网络…');
+      console.log('[优化模型] 加载风格网络…');
+      optStyleNet = await tf.loadGraphModel(BASE + '/saved_model_style_js/model.json');
+      console.log('[优化模型] 风格网络完成');
+
+      setStatus('加载转换网络…（较大，请耐心等待）');
+      console.log('[优化模型] 加载转换网络…');
+      optTransformerNet = await tf.loadGraphModel(BASE + '/saved_model_transformer_separable_js/model.json');
+      console.log('[优化模型] 转换网络完成');
+
+      optModelsReady = true;
+      setStatus('优化模型就绪');
+    })();
+
+    try {
+      await optLoadPromise;
+    } finally {
+      optLoadPromise = null;
+    }
   }
 
   async function runFallbackStyleTransfer() {
-    // 加载优化模型（会缓存，只加载一次）
     await loadOptimizedModels();
 
     setStatus('正在使用优化模型处理…');
-    console.log('[轻量模式] 开始推理');
 
-    // 加载图片
     var contentImg = await new Promise(function (res, rej) {
       var i = new Image(); i.crossOrigin = 'anonymous';
       i.onload = function () { res(i); }; i.onerror = function () { rej(new Error('内容图加载失败')); };
@@ -302,73 +325,67 @@
       i.src = els.stylePreview.src;
     });
 
-    // 缩放
     var lowEnd = isLowEndDevice();
     var contentCanvas = downscaleToCanvas(contentImg, lowEnd ? 384 : 640);
     var styleCanvas = downscaleToCanvas(styleImg, lowEnd ? 192 : 384);
     contentImg.src = ''; styleImg.src = '';
 
-    // 推理
     tf.engine().startScope();
     try {
       var content = tf.browser.fromPixels(contentCanvas, 3).toFloat().div(255).expandDims();
       var style = tf.browser.fromPixels(styleCanvas, 3).toFloat().div(255).expandDims();
-      console.log('[轻量模式] content:', content.shape, 'style:', style.shape);
-
       var styleVec = optStyleNet.predict(style);
-      console.log('[轻量模式] styleVec:', styleVec.shape);
-
       var result = optTransformerNet.predict([content, styleVec]);
-      console.log('[轻量模式] result:', result.shape);
-
       var squeezed = result.squeeze();
-      var h = squeezed.shape[0], w = squeezed.shape[1];
-      els.resultCanvas.width = w;
-      els.resultCanvas.height = h;
+      els.resultCanvas.width = squeezed.shape[1];
+      els.resultCanvas.height = squeezed.shape[0];
       await tf.browser.toPixels(squeezed, els.resultCanvas);
-
-      // 清理
       squeezed.dispose(); styleVec.dispose(); content.dispose(); style.dispose();
       tf.engine().endScope();
       contentCanvas.width = 0; contentCanvas.height = 0;
       styleCanvas.width = 0; styleCanvas.height = 0;
-
       resultReady = true;
       els.downloadBtn.disabled = false;
       setStatus('✅ 完成！可点击"下载结果"。（优化模型，后端：' + tf.getBackend() + '）');
     } catch (e) {
       tf.engine().endScope();
-      console.error('[轻量模式] 推理失败:', e);
-      throw new Error('优化模型推理失败：' + e.message);
+      throw new Error('推理失败：' + e.message);
     }
   }
 
-  // ============ 核心推理（带自动降级） ============
+  // ============ 核心推理（设备自适应） ============
 
   async function runStyleTransfer() {
     if (isRunning) return;
     isRunning = true;
 
-    const refs = { contentCanvas: null, styleCanvas: null, contentImg: null, styleImg: null };
+    var refs = { contentCanvas: null, styleCanvas: null, contentImg: null, styleImg: null };
 
     try {
       els.runBtn.disabled = true;
       els.downloadBtn.disabled = true;
-      setStatus('处理中…');
 
+      // 设备自适应：high 用完整模型，mid/low 用优化模型
+      var useOptModel = deviceProfile.tier !== 'high';
+
+      if (useOptModel) {
+        // ── 优化模型路径 ──
+        setStatus('正在加载优化模型…');
+        await loadOptimizedModels();
+        setStatus('正在处理…');
+        await runFallbackStyleTransfer();
+        return;
+      }
+
+      // ── 完整模型路径（仅 high tier） ──
       if (!modelReady) {
-        setStatus('正在加载模型，请稍候…');
+        setStatus('正在加载完整模型，请稍候…');
         try {
-          await withTimeout(ensureModel(), 60000, '模型加载');
+          await withTimeout(ensureModel(), 120000, '模型加载');
         } catch (modelErr) {
-          console.warn('模型加载失败，降级到轻量模式：', modelErr);
-          try {
-            await runFallbackStyleTransfer();
-          } catch (_) {
-            setStatus('⚠️ 处理失败，请刷新页面重试');
-          }
-          isRunning = false;
-          enableRunIfReady();
+          console.warn('完整模型加载失败，降级到优化模型：', modelErr);
+          await loadOptimizedModels();
+          await runFallbackStyleTransfer();
           return;
         }
         if (!modelReady) {
@@ -378,140 +395,98 @@
         }
       }
 
-      // 推理前内存检查 — 不足时直接降级
       if (!checkMemoryBeforeRun()) {
-        setStatus('⚠️ 可用内存不足，切换到轻量模式…');
-        try {
-          await runFallbackStyleTransfer();
-        } catch (_) {
-          setStatus('⚠️ 处理失败，请关闭其他标签页后重试');
-        }
-        isRunning = false;
-        enableRunIfReady();
+        setStatus('⚠️ 可用内存不足，使用优化模型…');
+        await loadOptimizedModels();
+        await runFallbackStyleTransfer();
         return;
       }
 
-      const mdl = await ensureModel();
+      var mdl = await ensureModel();
 
-      // 加载 Image 对象
-      refs.contentImg = await new Promise((res, rej) => {
-        const i = new Image(); i.crossOrigin = 'anonymous';
-        i.onload = () => res(i); i.onerror = () => rej(new Error('内容图加载失败'));
+      refs.contentImg = await new Promise(function (res, rej) {
+        var i = new Image(); i.crossOrigin = 'anonymous';
+        i.onload = function () { res(i); }; i.onerror = function () { rej(new Error('内容图加载失败')); };
         i.src = els.contentPreview.src;
       });
-      refs.styleImg = await new Promise((res, rej) => {
-        const i = new Image(); i.crossOrigin = 'anonymous';
-        i.onload = () => res(i); i.onerror = () => rej(new Error('风格图加载失败'));
+      refs.styleImg = await new Promise(function (res, rej) {
+        var i = new Image(); i.crossOrigin = 'anonymous';
+        i.onload = function () { res(i); }; i.onerror = function () { rej(new Error('风格图加载失败')); };
         i.src = els.stylePreview.src;
       });
 
-      // 根据后端/设备动态缩放
-      const backend = tf.getBackend();
-      const sizes = pickSizesByBackend(backend);
+      var backend = tf.getBackend();
+      var sizes = pickSizesByBackend(backend);
       refs.contentCanvas = downscaleToCanvas(refs.contentImg, sizes.content);
       refs.styleCanvas = downscaleToCanvas(refs.styleImg, sizes.style);
+      refs.contentImg.src = ''; refs.styleImg.src = '';
+      refs.contentImg = null; refs.styleImg = null;
 
-      // ★ 缩放完成后立即释放 Image 引用
-      refs.contentImg.src = '';
-      refs.styleImg.src = '';
-      refs.contentImg = null;
-      refs.styleImg = null;
-
-      const lowEnd = isLowEndDevice();
-      const inferTimeout = lowEnd ? 90000 : 180000;
-      setStatus('推理中…（' + (lowEnd ? '设备性能较低，请耐心等待' : '取决于设备性能，可能需数秒到十数秒') + '）');
+      setStatus('推理中…');
 
       tf.engine().startScope();
-      let stylized;
+      var stylized;
       try {
-        stylized = await withRetry(() => mdl.stylize(refs.contentCanvas, refs.styleCanvas), {
-          retries: lowEnd ? 0 : 1,
+        stylized = await withRetry(function () { return mdl.stylize(refs.contentCanvas, refs.styleCanvas); }, {
+          retries: 0,
           baseDelay: 600,
-          timeoutMs: inferTimeout,
-          onAttempt: (k) => setStatus(k ? '重试推理中…' : '推理中…')
+          timeoutMs: 180000
         });
       } catch (inferErr) {
         tf.engine().endScope();
         throw inferErr;
       }
 
-      const ctx = els.resultCanvas.getContext('2d');
+      var ctx = els.resultCanvas.getContext('2d');
 
-      // 处理不同返回类型
-      if (typeof tf !== 'undefined' && tf.tensor && stylized && typeof stylized === 'object' && typeof stylized.data === 'function' && Array.isArray(stylized.shape)) {
-        let t = stylized;
-        let squeezed = false;
-        if (t.shape.length === 4 && t.shape[0] === 1) {
-          t = t.squeeze();
-          squeezed = true;
-        }
-        if (t.shape.length !== 3) {
-          t.dispose();
-          throw new Error('模型返回张量维度不支持：' + t.shape.join('x'));
-        }
-        const [h, w] = t.shape.slice(0, 2);
-        els.resultCanvas.width = w;
-        els.resultCanvas.height = h;
-        const data = await t.data();
-        // ★ 关键修复：提取数据后立即释放张量
+      if (stylized && typeof stylized.data === 'function' && Array.isArray(stylized.shape)) {
+        var t = stylized;
+        var squeezed = false;
+        if (t.shape.length === 4 && t.shape[0] === 1) { t = t.squeeze(); squeezed = true; }
+        if (t.shape.length !== 3) { t.dispose(); throw new Error('张量维度不支持：' + t.shape.join('x')); }
+        var h = t.shape[0], w = t.shape[1];
+        els.resultCanvas.width = w; els.resultCanvas.height = h;
+        var data = await t.data();
         t.dispose();
         if (squeezed && stylized !== t) stylized.dispose();
-
-        const imageData = ctx.createImageData(w, h);
-        const scale = (function () {
-          let maxv = 0, minv = 1e9;
-          const sampleLen = Math.min(1000, data.length);
-          for (let i = 0; i < sampleLen; i++) {
-            const v = data[i]; maxv = Math.max(maxv, v); minv = Math.min(minv, v);
-          }
-          return (maxv <= 1.5) ? 255 : 1;
-        })();
-        for (let i = 0, j = 0; i < data.length; i += 3, j += 4) {
-          imageData.data[j] = data[i] * scale;
-          imageData.data[j + 1] = data[i + 1] * scale;
-          imageData.data[j + 2] = data[i + 2] * scale;
-          imageData.data[j + 3] = 255;
+        var imageData = ctx.createImageData(w, h);
+        var scale = 1;
+        for (var si = 0; si < Math.min(1000, data.length); si++) { if (data[si] > 1.5) { scale = 1; break; } scale = 255; }
+        for (var di = 0, dj = 0; di < data.length; di += 3, dj += 4) {
+          imageData.data[dj] = data[di] * scale;
+          imageData.data[dj + 1] = data[di + 1] * scale;
+          imageData.data[dj + 2] = data[di + 2] * scale;
+          imageData.data[dj + 3] = 255;
         }
         ctx.putImageData(imageData, 0, 0);
       } else if (stylized instanceof HTMLCanvasElement) {
-        els.resultCanvas.width = stylized.width;
-        els.resultCanvas.height = stylized.height;
+        els.resultCanvas.width = stylized.width; els.resultCanvas.height = stylized.height;
         ctx.drawImage(stylized, 0, 0);
-      } else if (stylized && typeof stylized.width === 'number' && typeof stylized.height === 'number' && stylized.data) {
-        els.resultCanvas.width = stylized.width;
-        els.resultCanvas.height = stylized.height;
-        ctx.putImageData(stylized, 0, 0);
       } else {
-        throw new Error('模型返回未知类型，无法绘制');
+        throw new Error('模型返回未知类型');
       }
       tf.engine().endScope();
 
       resultReady = true;
       els.downloadBtn.disabled = false;
-      setStatus('完成！可点击"下载结果"。（后端：' + tf.getBackend() + '）');
+      setStatus('✅ 完成！可点击"下载结果"。（完整模型，后端：' + tf.getBackend() + '）');
     } catch (err) {
       console.error('风格迁移错误：', err);
-      let msg = err && err.message ? err.message : String(err);
-      const isOom = msg.includes('out of memory') || msg.includes('OOM');
-      const isTimeout = msg.includes('超时');
-      const isWebGL = msg.includes('WebGL');
-
-      // 自动降级到轻量模式
-      if (isOom || isTimeout || isWebGL) {
-        console.warn('神经网络推理失败，自动降级到优化模型');
+      var msg = err && err.message ? err.message : String(err);
+      // 完整模型失败 → 降级到优化模型
+      if (deviceProfile.tier === 'high') {
+        console.warn('完整模型失败，降级到优化模型');
         try {
+          await loadOptimizedModels();
           await runFallbackStyleTransfer();
           return;
-        } catch (fallbackErr) {
-          console.error('轻量模式也失败了：', fallbackErr);
-          setStatus('⚠️ 两种模式均失败，请刷新页面重试');
+        } catch (_) {
+          setStatus('⚠️ 处理失败：' + msg);
           return;
         }
       }
-
       setStatus('发生错误：' + msg);
     } finally {
-      // ★ 关键修复：无论如何都清理临时资源
       cleanupInferenceResources(refs);
       isRunning = false;
       enableRunIfReady();
