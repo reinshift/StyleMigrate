@@ -348,8 +348,8 @@
       await tf.ready();
       console.log('[轻量模式] 后端就绪:', tf.getBackend());
 
-      // 使用 reiinakano 的 GitHub Pages 托管（国内可达）
-      const BASE = 'https://reiinakano.github.io/arbitrary-image-stylization-tfjs';
+      // jsDelivr GitHub 代理（国内可达）
+      var BASE = 'https://cdn.jsdelivr.net/gh/reiinakano/arbitrary-image-stylization-tfjs@master';
       const STYLE_URL = BASE + '/saved_model_style_js/model.json';
       const TRANSFORM_URL = BASE + '/saved_model_transformer_separable_js/model.json';
 
@@ -373,16 +373,19 @@
 
   function stylizeWithOptModels(contentCanvas, styleCanvas) {
     return tf.tidy(() => {
-      // 预处理：转为 float32 张量，归一化到 [0,1]
       let content = tf.browser.fromPixels(contentCanvas, 3).toFloat().div(255).expandDims();
       let style = tf.browser.fromPixels(styleCanvas, 3).toFloat().div(255).expandDims();
 
-      // 风格网络：提取 100 维风格向量
-      const styleVector = optStyleNet.predict(style);
-      // 转换网络：内容 + 风格向量 → 风格化图像
-      const stylized = optTransformerNet.predict([content, styleVector]);
+      console.log('[轻量模式] content shape:', content.shape, 'style shape:', style.shape);
+      console.log('[轻量模式] styleNet inputs:', optStyleNet.inputs.map(i => i.name + i.shape));
+      console.log('[轻量模式] transformerNet inputs:', optTransformerNet.inputs.map(i => i.name + i.shape));
 
-      // 输出形状 [1, h, w, 3]，值域 [0,1]
+      const styleVector = optStyleNet.predict(style);
+      console.log('[轻量模式] styleVector shape:', styleVector.shape);
+
+      const stylized = optTransformerNet.predict([content, styleVector]);
+      console.log('[轻量模式] stylized shape:', stylized.shape);
+
       return stylized.squeeze();
     });
   }
@@ -433,7 +436,9 @@
         return;
       } catch (e) {
         tf.engine().endScope();
-        console.error('[轻量模式] 优化模型推理失败，降级到色彩迁移：', e.message, e);
+        console.error('[轻量模式] 优化模型推理失败:', e.message);
+        console.error('[轻量模式] 完整错误:', e);
+        console.error('[轻量模式] 降级到色彩迁移');
       }
     }
 
