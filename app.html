@@ -126,7 +126,7 @@
       </div>
       <div class="actions">
         <button id="runBtn" class="primary" disabled>开始风格迁移</button>
-        <button id="fallbackBtn" class="ghost" disabled title="轻量模式：加载优化模型（~12MB），比主模型快3-4倍，兼容所有设备">轻量模式</button>
+        <button id="fallbackBtn" class="ghost" disabled title="轻量模式：MobileNet + 可分离卷积优化模型（~12MB），快3-4倍">轻量模式</button>
         <button id="downloadBtn" class="ghost" disabled>下载结果</button>
       </div>
       <div class="status" id="status">请先选择内容图与风格图。</div>
@@ -138,10 +138,9 @@
     <section class="panel tips-panel">
       <h3>提示</h3>
       <ul>
-        <li><b>开始风格迁移</b>：使用任意风格迁移模型，效果最好，需要较好设备（推荐 4GB+ 内存、Chrome/Edge）。</li>
-        <li><b>轻量模式</b>：加载优化模型（~12MB，MobileNet + 可分离卷积），比主模型<b>快 3-4 倍</b>，所有设备可用。</li>
+        <li><b>开始风格迁移</b>：使用完整任意风格迁移模型，效果最好，需要较好设备（推荐 4GB+ 内存、Chrome/Edge）。</li>
+        <li><b>轻量模式</b>：加载优化模型（~12MB，MobileNet + 可分离卷积），比主模型<b>快 3-4 倍</b>，低配设备可用。</li>
         <li>两种模式均在浏览器本地运行，图片不会上传到任何服务器。</li>
-        <li>如果两种模式都失败，系统会自动使用色彩迁移作为最终兜底。</li>
       </ul>
     </section>
   </main>

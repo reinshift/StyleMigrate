@@ -255,216 +255,92 @@
     return modelLoadPromise;
   }
 
-  // ============ 轻量模式：优化模型 + 色彩迁移降级 ============
+  // ============ 轻量模式：优化模型（MobileNet-v2 + 可分离卷积，~12MB） ============
 
-  // ── Reinhard 色彩迁移工具（兜底用） ──
-  function rgbToLab(r, g, b) {
-    let rl = r / 255, gl = g / 255, bl = b / 255;
-    rl = rl > 0.04045 ? Math.pow((rl + 0.055) / 1.055, 2.4) : rl / 12.92;
-    gl = gl > 0.04045 ? Math.pow((gl + 0.055) / 1.055, 2.4) : gl / 12.92;
-    bl = bl > 0.04045 ? Math.pow((bl + 0.055) / 1.055, 2.4) : bl / 12.92;
-    let x = (rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375) / 0.95047;
-    let y = (rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750) / 1.00000;
-    let z = (rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041) / 1.08883;
-    const f = (t) => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16 / 116);
-    x = f(x); y = f(y); z = f(z);
-    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
-  }
-
-  function labToRgb(L, a, b) {
-    let y = (L + 16) / 116, x = a / 500 + y, z = y - b / 200;
-    const finv = (t) => t > 0.206893 ? t * t * t : (t - 16 / 116) / 7.787;
-    x = 0.95047 * finv(x); y = 1.00000 * finv(y); z = 1.08883 * finv(z);
-    let rl = x * 3.2404542 + y * -1.5371385 + z * -0.4985314;
-    let gl = x * -0.9692660 + y * 1.8760108 + z * 0.0415560;
-    let bl = x * 0.0556434 + y * -0.2040259 + z * 1.0572252;
-    const gamma = (v) => v > 0.0031308 ? 1.055 * Math.pow(v, 1 / 2.4) - 0.055 : 12.92 * v;
-    return [
-      Math.max(0, Math.min(255, Math.round(gamma(rl) * 255))),
-      Math.max(0, Math.min(255, Math.round(gamma(gl) * 255))),
-      Math.max(0, Math.min(255, Math.round(gamma(bl) * 255)))
-    ];
-  }
-
-  function fallbackColorTransfer(contentCanvas, styleCanvas, strength) {
-    strength = strength || 0.85;
-    const cw = contentCanvas.width, ch = contentCanvas.height;
-    const ctxC = contentCanvas.getContext('2d', { willReadFrequently: true });
-    const contentData = ctxC.getImageData(0, 0, cw, ch);
-    const sw = styleCanvas.width, sh = styleCanvas.height;
-    const ctxS = styleCanvas.getContext('2d', { willReadFrequently: true });
-    const styleData = ctxS.getImageData(0, 0, sw, sh);
-    const step = Math.max(1, Math.floor(Math.sqrt(sw * sh / 5000)));
-    let sL = [], sA = [], sB = [];
-    for (let i = 0; i < styleData.data.length; i += 4 * step) {
-      const lab = rgbToLab(styleData.data[i], styleData.data[i + 1], styleData.data[i + 2]);
-      sL.push(lab[0]); sA.push(lab[1]); sB.push(lab[2]);
-    }
-    const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
-    const std = (arr, m) => Math.sqrt(arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length);
-    const sMeanL = mean(sL), sMeanA = mean(sA), sMeanB = mean(sB);
-    const sStdL = std(sL, sMeanL) || 1, sStdA = std(sA, sMeanA) || 1, sStdB = std(sB, sMeanB) || 1;
-    let cL = [], cA = [], cB = [];
-    for (let i = 0; i < contentData.data.length; i += 4 * step) {
-      const lab = rgbToLab(contentData.data[i], contentData.data[i + 1], contentData.data[i + 2]);
-      cL.push(lab[0]); cA.push(lab[1]); cB.push(lab[2]);
-    }
-    const cMeanL = mean(cL), cMeanA = mean(cA), cMeanB = mean(cB);
-    const cStdL = std(cL, cMeanL) || 1, cStdA = std(cA, cMeanA) || 1, cStdB = std(cB, cMeanB) || 1;
-    const out = ctxC.createImageData(cw, ch);
-    for (let i = 0; i < contentData.data.length; i += 4) {
-      const lab = rgbToLab(contentData.data[i], contentData.data[i + 1], contentData.data[i + 2]);
-      let nL = ((lab[0] - cMeanL) / cStdL) * sStdL + sMeanL;
-      let nA = ((lab[1] - cMeanA) / cStdA) * sStdA + sMeanA;
-      let nB = ((lab[2] - cMeanB) / cStdB) * sStdB + sMeanB;
-      nL = lab[0] * (1 - strength) + nL * strength;
-      nA = lab[1] * (1 - strength) + nA * strength;
-      nB = lab[2] * (1 - strength) + nB * strength;
-      const rgb = labToRgb(nL, nA, nB);
-      out.data[i] = rgb[0]; out.data[i + 1] = rgb[1]; out.data[i + 2] = rgb[2]; out.data[i + 3] = 255;
-    }
-    return out;
-  }
-
-  // ── 优化模型（MobileNet-v2 + 可分离卷积，~12MB） ──
   let optStyleNet = null;
   let optTransformerNet = null;
   let optModelsReady = false;
 
   async function loadOptimizedModels() {
-    if (optModelsReady) return true;
-    if (!(window.tf && window.tf.engine)) {
-      console.warn('[轻量模式] TF.js 未加载');
-      return false;
-    }
+    if (optModelsReady) return;
+    if (!(window.tf && window.tf.engine)) throw new Error('TensorFlow.js 未加载');
 
-    try {
-      setStatus('正在加载优化模型（~12MB）…');
+    setStatus('正在加载优化模型（~12MB）…');
 
-      // 确保后端就绪（不管之前有没有设过，都重新确认）
-      try { await tf.setBackend('webgl'); } catch (_) {}
-      try { await tf.setBackend('wasm'); } catch (_) {}
-      try { await tf.setBackend('cpu'); } catch (_) {}
-      await tf.ready();
-      console.log('[轻量模式] 后端就绪:', tf.getBackend());
+    // 确保后端就绪
+    try { await tf.setBackend('webgl'); } catch (_) {}
+    try { await tf.setBackend('wasm'); } catch (_) {}
+    try { await tf.setBackend('cpu'); } catch (_) {}
+    await tf.ready();
+    console.log('[轻量模式] 后端:', tf.getBackend());
 
-      // jsDelivr GitHub 代理（国内可达）
-      var BASE = 'https://cdn.jsdelivr.net/gh/reiinakano/arbitrary-image-stylization-tfjs@master';
-      const STYLE_URL = BASE + '/saved_model_style_js/model.json';
-      const TRANSFORM_URL = BASE + '/saved_model_transformer_separable_js/model.json';
-
-      console.log('[轻量模式] 开始加载风格网络…');
-      optStyleNet = await tf.loadGraphModel(STYLE_URL, { fromTFHub: false });
-      console.log('[轻量模式] 风格网络加载完成');
-
-      console.log('[轻量模式] 开始加载转换网络…');
-      optTransformerNet = await tf.loadGraphModel(TRANSFORM_URL, { fromTFHub: false });
-      console.log('[轻量模式] 转换网络加载完成');
-
-      optModelsReady = true;
-      setStatus('优化模型就绪');
-      return true;
-    } catch (e) {
-      console.error('[轻量模式] 模型加载失败:', e.message, e);
-      optModelsReady = false;
-      return false;
-    }
+    var BASE = 'https://cdn.jsdelivr.net/gh/reiinakano/arbitrary-image-stylization-tfjs@master';
+    console.log('[轻量模式] 加载风格网络…');
+    optStyleNet = await tf.loadGraphModel(BASE + '/saved_model_style_js/model.json');
+    console.log('[轻量模式] 加载转换网络…');
+    optTransformerNet = await tf.loadGraphModel(BASE + '/saved_model_transformer_separable_js/model.json');
+    optModelsReady = true;
+    console.log('[轻量模式] 两个模型加载完成');
   }
 
-  function stylizeWithOptModels(contentCanvas, styleCanvas) {
-    return tf.tidy(() => {
-      let content = tf.browser.fromPixels(contentCanvas, 3).toFloat().div(255).expandDims();
-      let style = tf.browser.fromPixels(styleCanvas, 3).toFloat().div(255).expandDims();
-
-      console.log('[轻量模式] content shape:', content.shape, 'style shape:', style.shape);
-      console.log('[轻量模式] styleNet inputs:', optStyleNet.inputs.map(i => i.name + i.shape));
-      console.log('[轻量模式] transformerNet inputs:', optTransformerNet.inputs.map(i => i.name + i.shape));
-
-      const styleVector = optStyleNet.predict(style);
-      console.log('[轻量模式] styleVector shape:', styleVector.shape);
-
-      const stylized = optTransformerNet.predict([content, styleVector]);
-      console.log('[轻量模式] stylized shape:', stylized.shape);
-
-      return stylized.squeeze();
-    });
-  }
-
-  // 轻量风格迁移：优化模型优先，色彩迁移兜底
   async function runFallbackStyleTransfer() {
-    const isOpt = await loadOptimizedModels();
+    // 加载优化模型（会缓存，只加载一次）
+    await loadOptimizedModels();
 
-    const contentImg = await new Promise((res, rej) => {
-      const i = new Image(); i.crossOrigin = 'anonymous';
-      i.onload = () => res(i); i.onerror = () => rej(new Error('内容图加载失败'));
+    setStatus('正在使用优化模型处理…');
+    console.log('[轻量模式] 开始推理');
+
+    // 加载图片
+    var contentImg = await new Promise(function (res, rej) {
+      var i = new Image(); i.crossOrigin = 'anonymous';
+      i.onload = function () { res(i); }; i.onerror = function () { rej(new Error('内容图加载失败')); };
       i.src = els.contentPreview.src;
     });
-    const styleImg = await new Promise((res, rej) => {
-      const i = new Image(); i.crossOrigin = 'anonymous';
-      i.onload = () => res(i); i.onerror = () => rej(new Error('风格图加载失败'));
+    var styleImg = await new Promise(function (res, rej) {
+      var i = new Image(); i.crossOrigin = 'anonymous';
+      i.onload = function () { res(i); }; i.onerror = function () { rej(new Error('风格图加载失败')); };
       i.src = els.stylePreview.src;
     });
 
-    if (isOpt && optModelsReady) {
-      // ── 优化模型路径 ──
-      console.log('[轻量模式] 走优化模型路径');
-      setStatus('正在使用优化模型处理…');
-      const lowEnd = isLowEndDevice();
-      const cMax = lowEnd ? 384 : 640;
-      const sMax = lowEnd ? 192 : 384;
-      const contentCanvas = downscaleToCanvas(contentImg, cMax);
-      const styleCanvas = downscaleToCanvas(styleImg, sMax);
-      contentImg.src = ''; styleImg.src = '';
-
-      await new Promise(r => setTimeout(r, 30));
-
-      try {
-        tf.engine().startScope();
-        const result = stylizeWithOptModels(contentCanvas, styleCanvas);
-        const [h, w] = result.shape;
-        els.resultCanvas.width = w;
-        els.resultCanvas.height = h;
-        await tf.browser.toPixels(result, els.resultCanvas);
-        result.dispose();
-        tf.engine().endScope();
-
-        contentCanvas.width = 0; contentCanvas.height = 0;
-        styleCanvas.width = 0; styleCanvas.height = 0;
-        resultReady = true;
-        els.downloadBtn.disabled = false;
-        setStatus('✅ 优化模型完成！（MobileNet+可分离卷积）可点击"下载结果"。');
-        return;
-      } catch (e) {
-        tf.engine().endScope();
-        console.error('[轻量模式] 优化模型推理失败:', e.message);
-        console.error('[轻量模式] 完整错误:', e);
-        console.error('[轻量模式] 降级到色彩迁移');
-      }
-    }
-
-    // ── 色彩迁移兜底 ──
-    console.log('[轻量模式] 优化模型不可用，走色彩迁移兜底');
-    setStatus('正在使用色彩迁移处理…');
-    const lowEnd = isLowEndDevice();
-    const maxSide = lowEnd ? 600 : 1024;
-    const contentCanvas = downscaleToCanvas(contentImg, maxSide);
-    const styleCanvas = downscaleToCanvas(styleImg, Math.min(maxSide, 512));
+    // 缩放
+    var lowEnd = isLowEndDevice();
+    var contentCanvas = downscaleToCanvas(contentImg, lowEnd ? 384 : 640);
+    var styleCanvas = downscaleToCanvas(styleImg, lowEnd ? 192 : 384);
     contentImg.src = ''; styleImg.src = '';
 
-    await new Promise(r => setTimeout(r, 50));
+    // 推理
+    tf.engine().startScope();
+    try {
+      var content = tf.browser.fromPixels(contentCanvas, 3).toFloat().div(255).expandDims();
+      var style = tf.browser.fromPixels(styleCanvas, 3).toFloat().div(255).expandDims();
+      console.log('[轻量模式] content:', content.shape, 'style:', style.shape);
 
-    const result = fallbackColorTransfer(contentCanvas, styleCanvas, 0.85);
-    els.resultCanvas.width = contentCanvas.width;
-    els.resultCanvas.height = contentCanvas.height;
-    const ctx = els.resultCanvas.getContext('2d');
-    ctx.putImageData(result, 0, 0);
+      var styleVec = optStyleNet.predict(style);
+      console.log('[轻量模式] styleVec:', styleVec.shape);
 
-    contentCanvas.width = 0; contentCanvas.height = 0;
-    styleCanvas.width = 0; styleCanvas.height = 0;
+      var result = optTransformerNet.predict([content, styleVec]);
+      console.log('[轻量模式] result:', result.shape);
 
-    resultReady = true;
-    els.downloadBtn.disabled = false;
-    setStatus('✅ 色彩迁移完成！可点击"下载结果"。');
+      var squeezed = result.squeeze();
+      var h = squeezed.shape[0], w = squeezed.shape[1];
+      els.resultCanvas.width = w;
+      els.resultCanvas.height = h;
+      await tf.browser.toPixels(squeezed, els.resultCanvas);
+
+      // 清理
+      squeezed.dispose(); styleVec.dispose(); content.dispose(); style.dispose();
+      tf.engine().endScope();
+      contentCanvas.width = 0; contentCanvas.height = 0;
+      styleCanvas.width = 0; styleCanvas.height = 0;
+
+      resultReady = true;
+      els.downloadBtn.disabled = false;
+      setStatus('✅ 完成！可点击"下载结果"。（优化模型，后端：' + tf.getBackend() + '）');
+    } catch (e) {
+      tf.engine().endScope();
+      console.error('[轻量模式] 推理失败:', e);
+      throw new Error('优化模型推理失败：' + e.message);
+    }
   }
 
   // ============ 核心推理（带自动降级） ============
@@ -622,7 +498,7 @@
 
       // 自动降级到轻量模式
       if (isOom || isTimeout || isWebGL) {
-        console.warn('神经网络推理失败，自动降级到轻量色彩迁移模式');
+        console.warn('神经网络推理失败，自动降级到优化模型');
         try {
           await runFallbackStyleTransfer();
           return;
